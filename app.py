@@ -59,7 +59,6 @@ if not st.session_state["authenticated"]:
             
 else:
     # 4. LOGGED IN BRANDED DASHBOARD
-    # FIX: Explicitly passed the number 2 into columns to clear the TypeError snag
     col1, col2 = st.columns(2)
     with col1:
         if company_logo_url:
@@ -90,20 +89,23 @@ else:
                     
                     # Case A: Processing Excel spreadsheet streams natively
                     if selected_file_name.endswith(".xlsx"):
-                        df = pd.read_excel(io.BytesIO(file_response.content), header=0)
+                        # FIX: Read the spreadsheet as strings to preserve all columns regardless of formatting
+                        df = pd.read_excel(io.BytesIO(file_response.content), dtype=str)
                         
-                        # Clean column names by removing hidden spaces or un-named anomalies
+                        # Strip spacing artifacts off headers to keep columns uniform
                         df.columns = [str(c).strip() for c in df.columns]
+                        
+                        # Remove true empty rows or systemic placeholder anomalies 
+                        df = df.dropna(how='all')
                         df = df.loc[:, ~df.columns.str.contains('^Unnamed')]
                         
                         if keywords:
-                            # Force search capability across ALL columns (including Carrier)
+                            # Run clean broad text mapping matches across ALL available cells
                             mask = df.astype(str).apply(lambda x: x.str.lower().str.contains('|'.join(keywords))).any(axis=1)
                             df = df[mask]
                         
-                        # AUTOMATIC SMART SORT: Automatically sorts rows by lowest GP20 price rate
+                        # Ensure custom numeric price sort is handled safely
                         if "GP20" in df.columns:
-                            # Safely convert price cells to numbers for accurate mathematical ranking
                             price_sort = pd.to_numeric(df["GP20"], errors='coerce')
                             df = df.iloc[price_sort.argsort()]
                             
