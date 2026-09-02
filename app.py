@@ -61,6 +61,24 @@ else:
         selected_file_name = st.selectbox("Choose a freight liner database document:", available_files)
         target_file_path = os.path.join(LOCAL_FOLDER_PATH, selected_file_name)
         
+        # Standard default sheet fallback tracker
+        selected_sheet = None
+        
+        # SAFE MULTI-SHEET PROBING LAYER
+        if selected_file_name.endswith(".xlsx"):
+            try:
+                # Open Excel file metadata structure to list tab indices instantly
+                xl = pd.ExcelFile(target_file_path, engine='openpyxl')
+                all_tabs = xl.sheet_names
+                
+                # ONLY display the dropdown UI element if the workbook has 2 or more tabs
+                if len(all_tabs) > 1:
+                    selected_sheet = st.selectbox("Select workbook sheet/tab to query:", all_tabs)
+                else:
+                    selected_sheet = all_tabs[0]
+            except Exception as e:
+                st.sidebar.error(f"Workbook index trace issue: {e}")
+
         st.info("💡 Instructions: Clear the box below to see ALL rows. Or search any keyword (e.g., 'ANL', 'BENLINE', 'PORT') to filter your data table instantly.")
         user_query = st.text_input("Enter search keywords:")
         
@@ -74,8 +92,8 @@ else:
                         
                         # Case A: Handle Excel Spreadsheet Files locally
                         if selected_file_name.endswith(".xlsx"):
-                            # Force read explicitly with zero row index theft locks
-                            df = pd.read_excel(target_file_path, header=0, dtype=str, index_col=False)
+                            # Read explicitly from the target sheet selected in the dropdown menu
+                            df = pd.read_excel(target_file_path, sheet_name=selected_sheet, header=0, dtype=str, index_col=False)
                             
                             # Clean column headers and enforce explicit upper-case names
                             df.columns = [str(c).strip().upper() for c in df.columns]
@@ -98,11 +116,10 @@ else:
                                 df = df.iloc[price_sort.argsort()]
                                 
                             if not df.empty:
-                                st.metric("Total Quotes Found", len(df))
-                                # hide_index=True ensures Excel's hidden row count labels do not show up
+                                st.metric(f"Total Quotes Found in [{selected_sheet}]", len(df))
                                 st.dataframe(df, use_container_width=True, hide_index=True) 
                             else:
-                                st.warning("No rows inside this liner file matched your keywords.")
+                                st.warning(f"No rows inside the sheet tab [{selected_sheet}] matched your keywords.")
                                 
                         # Case B: Handle PDF Files locally
                         elif selected_file_name.endswith(".pdf"):
