@@ -74,13 +74,14 @@ else:
                         
                         # Case A: Handle Excel Spreadsheet Files locally
                         if selected_file_name.endswith(".xlsx"):
+                            # Read everything as plain text strings from the very top row layer
                             raw_df = pd.read_excel(target_file_path, header=None, dtype=str)
                             
-                            # DYNAMIC HEADER LAYER LOCATOR
+                            # ROBUST HEADER DETECTOR: Scan the first 5 rows to locate data positions safely
                             header_row_index = 0
-                            for idx, row in raw_df.iterrows():
+                            for idx, row in raw_df.head(5).iterrows():
                                 row_text = " ".join([str(val).lower() for val in row.values if pd.notna(val)])
-                                if "carrier" in row_text or "port" in row_text or "region" in row_text:
+                                if "carrier" in row_text or "port" in row_text or "region" in row_text or "validity" in row_text:
                                     header_row_index = idx
                                     break
                             
@@ -92,6 +93,13 @@ else:
                             
                             # Clean column headers and enforce explicit upper-case names
                             df.columns = [str(c).strip().upper() for c in df.columns]
+                            
+                            # AUTOMATIC BLANK HEADER RECOVERY TIER
+                            # If Excel formatting hid the first column name, explicitly rename it to CARRIER
+                            if len(df.columns) > 0 and (df.columns[0].startswith("UNNAMED") or df.columns[0] == "NAN" or not df.columns[0]):
+                                new_cols = list(df.columns)
+                                new_cols[0] = "CARRIER"
+                                df.columns = new_cols
                             
                             # Standard clean-up: remove unassigned placeholder columns or true empty rows
                             df = df.dropna(how='all')
