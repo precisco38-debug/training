@@ -67,10 +67,10 @@ else:
                 prompt = f"Analyze this content. Disregard layout discrepancies and map the following details into rows and columns: {user_query}"
                 
                 try:
-                    # Case A: Handling PDF layouts (ROUTED TO SECURE GLOBAL STABLE INTERFACE)
+                    # Case A: Handling PDF layouts (ROUTED TO THE CORE 3.6 PIPELINE)
                     if selected_file_name.endswith(".pdf"):
                         res = client.models.generate_content(
-                            model='gemini-1.5-flash',
+                            model='gemini-3.6-flash',
                             contents=[
                                 types.Part.from_bytes(data=file_bytes, mime_type='application/pdf'),
                                 prompt
@@ -80,12 +80,12 @@ else:
                                 response_schema=TableStructure,
                             ),
                         )
-                    # Case B: Handling Spreadsheet layouts (ROUTED TO SECURE GLOBAL STABLE INTERFACE)
+                    # Case B: Handling Spreadsheet layouts (ROUTED TO THE CORE 3.6 PIPELINE)
                     else:
                         df = pd.read_excel(io.BytesIO(file_bytes))
                         markdown_data = df.to_markdown(index=False)
                         res = client.models.generate_content(
-                            model='gemini-1.5-flash',
+                            model='gemini-3.6-flash',
                             contents=f"Spreadsheet content:\n{markdown_data}\n\nTask: {prompt}",
                             config=types.GenerateContentConfig(
                                 response_mime_type="application/json",
