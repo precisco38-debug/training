@@ -1,59 +1,41 @@
 import streamlit as st
 import pandas as pd
 import io
-import requests
-import re
+import os
 import pypdf
 
-# 1. System Coordinates
-GITHUB_USER = "precisco38-debug"
-GITHUB_REPO = "training"
-BRANCH = "main"
-FOLDER_PATH = "documents"
+# 1. Local Hard Drive Folder Path (No internet URLs needed!)
+LOCAL_FOLDER_PATH = "documents"
+logo_path = os.path.join(LOCAL_FOLDER_PATH, "logo.png")
 
-@st.cache_data(ttl=5)
-def get_live_file_list_secure():
-    valid_files = {}
-    
-    # Enterprise-grade stable download streams (Bypasses GitHub network locks)
-    cdn_base = f"https://jsdelivr.net{GITHUB_USER}/{GITHUB_REPO}@{BRANCH}/{FOLDER_PATH}"
-    logo_url = f"{cdn_base}/logo.png"
-    
+def get_live_file_list_local():
+    valid_files = []
     try:
-        # Scan the GitHub webpage folder tree using clean browser headers
-        scrape_url = f"https://github.com{GITHUB_USER}/{GITHUB_REPO}/tree/{BRANCH}/{FOLDER_PATH}"
-        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
-        response = requests.get(scrape_url, headers=headers, timeout=10)
-        
-        if response.status_code == 200:
-            matches = re.findall(r'href="/' + GITHUB_USER + r'/' + GITHUB_REPO + r'/blob/' + BRANCH + r'/' + FOLDER_PATH + r'/([^"]+)"', response.text)
-            unique_names = list(set(matches))
-            
-            for name in unique_names:
-                name_clean = requests.utils.unquote(name)
-                if name_clean.endswith(".pdf") or name_clean.endswith(".xlsx"):
-                    valid_files[name_clean] = f"{cdn_base}/{name}"
+        # Scan the local hard drive folder directly
+        if os.path.exists(LOCAL_FOLDER_PATH):
+            for name in os.listdir(LOCAL_FOLDER_PATH):
+                if name.endswith(".pdf") or name.endswith(".xlsx"):
+                    valid_files.append(name)
     except Exception:
         pass
         
-    # Baseline fallback to keep the app operational if scanning drops
+    # Safety fallback if the folder scanning encounters an OS lock
     if not valid_files:
-        fallback_name = "2026-09-Precisco.xlsx"
-        valid_files[fallback_name] = f"{cdn_base}/{fallback_name}"
+        valid_files = ["2026-09-Precisco.xlsx"]
         
-    return valid_files, logo_url
+    return sorted(valid_files)
 
 # 2. Page Configurations
 st.set_page_config(layout="centered", page_title="Precisco Query Portal")
-available_files, company_logo_url = get_live_file_list_secure()
+available_files = get_live_file_list_local()
 
 # 3. SECURE GATEKEEPER LOGIN SCREEN
 if "authenticated" not in st.session_state:
     st.session_state["authenticated"] = False
 
 if not st.session_state["authenticated"]:
-    if company_logo_url:
-        st.image(company_logo_url, width=220)
+    if os.path.exists(logo_path):
+        st.image(logo_path, width=220)
     st.title("🔒 Precisco Supply Chain Portal")
     st.subheader("Login required to access secure rate databases")
     
@@ -70,35 +52,32 @@ else:
     # 4. LOGGED IN BRANDED DASHBOARD
     col1, col2 = st.columns(2)
     with col1:
-        if company_logo_url:
-            st.image(company_logo_url, use_container_width=True)
+        if os.path.exists(logo_path):
+            st.image(logo_path, use_container_width=True)
     with col2:
         st.title("Precisco Query System")
         st.caption("Precision in Supply Chain Management")
 
     st.write("---")
 
-    # DYNAMIC DROPDOWN: Automatically displays whatever files exist in the folder
-    selected_file_name = st.selectbox("Choose a freight liner database document:", list(available_files.keys()))
-    download_url = available_files[selected_file_name]
+    # DYNAMIC DROPDOWN: Instantly lists whatever files exist inside your repository folder
+    selected_file_name = st.selectbox("Choose a freight liner database document:", available_files)
+    target_file_path = os.path.join(LOCAL_FOLDER_PATH, selected_file_name)
     
     st.info("💡 Instructions: Clear the box below to see ALL rows. Or search any keyword (e.g., 'HPL', 'Ningbo', '300') to filter your data table instantly.")
     user_query = st.text_input("Enter search keywords:")
     
     if st.button("Extract Data Table"):
-        with st.spinner("Processing secure matrix data stream..."):
+        with st.spinner("Reading file from local disk (Instant)..."):
             try:
-                # Added browser simulation headers and timeout protections
-                headers = {"User-Agent": "Mozilla/5.0"}
-                file_response = requests.get(download_url, headers=headers, timeout=15)
-                
-                if file_response.status_code != 200:
-                    st.error("Failed to stream data from secure file path storage.")
+                if not os.path.exists(target_file_path):
+                    st.error(f"File {selected_file_name} was not found on the local disk path.")
                 else:
                     keywords = [k.strip().lower() for k in user_query.split(",") if k.strip()]
                     
+                    # Case A: Handle Excel Spreadsheet Files locally
                     if selected_file_name.endswith(".xlsx"):
-                        df = pd.read_excel(io.BytesIO(file_response.content), header=None, dtype=str)
+                        df = pd.read_excel(target_file_path, header=None, dtype=str)
                         
                         df.columns = [str(c).strip().upper() for c in df.iloc[0]]
                         df = df[1:]
@@ -119,28 +98,28 @@ else:
                         else:
                             st.warning("No rows inside this liner file matched your keywords.")
                             
+                    # Case B: Handle PDF Files locally
                     elif selected_file_name.endswith(".pdf"):
-                        pdf_file = io.BytesIO(file_response.content)
-                        reader = pypdf.PdfReader(pdf_file)
-                        
                         extracted_rows = []
-                        for page in reader.pages:
-                            text = page.extract_text()
-                            if text:
-                                for line in text.split("\n"):
-                                    clean_line = line.strip()
-                                    if not clean_line:
-                                        continue
-                                        
-                                    if keywords:
-                                        matches = any(kw in clean_line.lower() for kw in keywords)
-                                    else:
-                                        matches = True
-                                        
-                                    if matches:
-                                        parts = [p.strip() for p in clean_line.split("  ") if p.strip()]
-                                        if parts:
-                                            extracted_rows.append(parts)
+                        with open(target_file_path, "rb") as f:
+                            reader = pypdf.PdfReader(f)
+                            for page in reader.pages:
+                                text = page.extract_text()
+                                if text:
+                                    for line in text.split("\n"):
+                                        clean_line = line.strip()
+                                        if not clean_line:
+                                            continue
+                                            
+                                        if keywords:
+                                            matches = any(kw in clean_line.lower() for kw in keywords)
+                                        else:
+                                            matches = True
+                                            
+                                        if matches:
+                                            parts = [p.strip() for p in clean_line.split("  ") if p.strip()]
+                                            if parts:
+                                                extracted_rows.append(parts)
                         
                         if extracted_rows:
                             max_cols = max(len(r) for r in extracted_rows)
@@ -152,4 +131,4 @@ else:
                         else:
                             st.warning("No data points found matching those keywords in this PDF.")
             except Exception as e:
-                st.error(f"Network stream connection error: {e}. Please click the button again.")
+                st.error(f"Local storage read error: {e}")
