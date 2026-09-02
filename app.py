@@ -23,10 +23,8 @@ def get_live_file_list_secure():
         
         for file_content in contents:
             name = file_content.name
-            # Capture the brand asset logo
             if name.lower() == "logo.png":
                 logo_url = file_content.download_url
-            # Dynamically capture yyyy-mm-liner formatted files
             elif name.endswith(".pdf") or name.endswith(".xlsx"):
                 valid_files[name] = file_content.download_url
                 
@@ -38,7 +36,6 @@ def get_live_file_list_secure():
 # 2. Set Up Page Tab Configuration
 st.set_page_config(layout="centered", page_title="Precisco Query Portal")
 
-# Fetch files and branding elements from GitHub repo
 available_files, company_logo_url = get_live_file_list_secure()
 
 # 3. SECURE GATEKEEPER LOGIN SCREEN
@@ -46,7 +43,6 @@ if "authenticated" not in st.session_state:
     st.session_state["authenticated"] = False
 
 if not st.session_state["authenticated"]:
-    # Center login branding layout
     if company_logo_url:
         st.image(company_logo_url, width=220)
     st.title("🔒 Precisco Supply Chain Portal")
@@ -55,7 +51,6 @@ if not st.session_state["authenticated"]:
     input_password = st.text_input("Enter System Password:", type="password")
     
     if st.button("Access Dashboard"):
-        # ENTERPRISE PASSWORD MATCH (Case-Sensitive Validation Check)
         if input_password == "Precisco2026":
             st.session_state["authenticated"] = True
             st.rerun()
@@ -64,7 +59,7 @@ if not st.session_state["authenticated"]:
             
 else:
     # 4. LOGGED IN BRANDED DASHBOARD
-    col1, col2 = st.columns([1, 3])
+    col1, col2 = st.columns()
     with col1:
         if company_logo_url:
             st.image(company_logo_url, use_container_width=True)
@@ -75,13 +70,12 @@ else:
     st.write("---")
 
     if not available_files:
-        st.warning(f"No valid data records matching `yyyy-mm-liner` layout rules found inside your `documents` folder yet.")
+        st.warning(f"No valid data records found inside your `documents` folder yet.")
     else:
-        # User dropdown populates dynamically with custom file titles like '2026-09-Evergreen.xlsx'
         selected_file_name = st.selectbox("Choose a freight liner database document:", list(available_files.keys()))
         download_url = available_files[selected_file_name]
         
-        st.info("💡 Instructions: Clear the box below and click the button to see ALL rows. Or type specific keywords separated by commas (e.g., 'Asia, Singapore, Durban') to filter rows instantly.")
+        st.info("💡 Instructions: Clear the box below to see ALL rows. Or search any keyword (e.g., 'HPL', 'Ningbo', '300') to filter your data table instantly.")
         user_query = st.text_input("Enter search keywords:")
         
         if st.button("Extract Data Table"):
@@ -95,9 +89,15 @@ else:
                     
                     # Case A: Processing Excel spreadsheet streams natively
                     if selected_file_name.endswith(".xlsx"):
-                        df = pd.read_excel(io.BytesIO(file_response.content))
+                        # FIX: Read spreadsheet and ensure row 1 is strictly treated as header
+                        df = pd.read_excel(io.BytesIO(file_response.content), header=0)
+                        
+                        # Clean column names by removing hidden spaces or un-named anomalies
+                        df.columns = [str(c).strip() for c in df.columns]
+                        df = df.loc[:, ~df.columns.str.contains('^Unnamed')]
                         
                         if keywords:
+                            # Force search capability across ALL columns (including Carrier)
                             mask = df.astype(str).apply(lambda x: x.str.lower().str.contains('|'.join(keywords))).any(axis=1)
                             df = df[mask]
                             
