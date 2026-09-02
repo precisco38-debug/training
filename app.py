@@ -4,7 +4,7 @@ import io
 import os
 import pypdf
 
-# 1. Local Hard Drive Folder Path Configuration
+# 1. Local Hard Drive Folder Path
 LOCAL_FOLDER_PATH = "documents"
 logo_path = os.path.join(LOCAL_FOLDER_PATH, "logo.png")
 
@@ -17,6 +17,7 @@ def get_live_file_list_local():
                     valid_files.append(name)
     except Exception:
         pass
+        
     return sorted(valid_files)
 
 # 2. Page Configurations
@@ -57,33 +58,32 @@ else:
     if not available_files:
         st.error("⚠️ No files found! Please ask the clerk to upload `.xlsx` or `.pdf` files to the GitHub `documents` folder.")
     else:
-        # File selector dropdown
         selected_file_name = st.selectbox("Choose a freight liner database document:", available_files)
         target_file_path = os.path.join(LOCAL_FOLDER_PATH, selected_file_name)
         
+        # Standard default sheet fallback tracker
         selected_sheet = None
         
-        # DYNAMIC SHEET DETECTOR LAYER
+        # SAFE MULTI-SHEET PROBING LAYER
         if selected_file_name.endswith(".xlsx"):
             try:
-                # Read all sheet tab names natively from the local disk container file
+                # Open Excel file metadata structure to list tab indices instantly
                 xl = pd.ExcelFile(target_file_path, engine='openpyxl')
-                sheet_names = xl.sheet_names
+                all_tabs = xl.sheet_names
                 
-                # Render a second dynamic dropdown menu to allow selection of alternative tabs
-                selected_sheet = st.selectbox(
-                    "Select workbook sheet/tab to query:", 
-                    sheet_names,
-                    key=f"sheet_select_{selected_file_name}"
-                )
+                # ONLY display the dropdown UI element if the workbook has 2 or more tabs
+                if len(all_tabs) > 1:
+                    selected_sheet = st.selectbox("Select workbook sheet/tab to query:", all_tabs)
+                else:
+                    selected_sheet = all_tabs[0]
             except Exception as e:
-                st.sidebar.error(f"Error loading workbook tabs: {e}")
-        
-        st.info("💡 Instructions: Clear the box below to see ALL rows. Or search any keyword (e.g., 'ANL', 'BENLINE', 'Yantian') to filter your data table instantly.")
+                st.sidebar.error(f"Workbook index trace issue: {e}")
+
+        st.info("💡 Instructions: Clear the box below to see ALL rows. Or search any keyword (e.g., 'ANL', 'BENLINE', 'PORT') to filter your data table instantly.")
         user_query = st.text_input("Enter search keywords:")
         
         if st.button("Extract Data Table"):
-            with st.spinner("Reading file target matrix locally (Instant)..."):
+            with st.spinner("Reading file from local disk (Instant)..."):
                 try:
                     if not os.path.exists(target_file_path):
                         st.error(f"File {selected_file_name} was not found on the local disk path.")
@@ -92,24 +92,26 @@ else:
                         
                         # Case A: Handle Excel Spreadsheet Files locally
                         if selected_file_name.endswith(".xlsx"):
-                            # Force read using the explicitly chosen workbook tab name
+                            # Step 1: Read sheet as raw data to detect header location dynamically
                             raw_df = pd.read_excel(target_file_path, sheet_name=selected_sheet, header=None, dtype=str)
                             
-                            # DYNAMIC HEADER LAYER LOCATOR
+                            # Find the row row index where columns are located
                             header_row_index = 0
-                            for idx, row in raw_df.head(15).iterrows():
+                            for idx, row in raw_df.head(20).iterrows():
                                 row_text = " ".join([str(val).lower() for val in row.values if pd.notna(val)])
-                                if "carrier" in row_text or "port" in row_text or "region" in row_text or "location" in row_text or "a/c/t/d/w" in row_text:
+                                if "carrier" in row_text or "port" in row_text or "location" in row_text or "a/c/t/d/w" in row_text:
                                     header_row_index = idx
                                     break
                             
+                            # Copy the specific header series and forward-fill merged cells safely
                             header_series = raw_df.iloc[header_row_index].copy()
                             header_series = header_series.ffill()
                             
-                            # Reload dataset slicing parameters cleanly
+                            # Slice out data payload rows under the dynamic header
                             data_df = raw_df.iloc[header_row_index + 1:].copy()
                             data_df = data_df.reset_index(drop=True)
                             
+                            # Format headers to crisp uppercase strings
                             clean_headers = []
                             for idx, val in enumerate(header_series):
                                 val_str = str(val).strip().upper()
@@ -120,14 +122,12 @@ else:
                                         clean_headers.append(f"COLUMN_{idx}")
                                 else:
                                     clean_headers.append(val_str)
-                                    
+                            
                             data_df.columns = clean_headers
                             data_df = data_df.dropna(how='all')
-                            
-                            # Clean copy layout to prevent warning messages
                             df = data_df.copy()
                             
-                            # Map alternate table column formats to standardized names automatically
+                            # Map alternative column formats to standardized core layout values
                             df.rename(columns={
                                 'A/C/T/D/W': 'CARRIER', 
                                 'A/C/T/W': 'CARRIER', 
@@ -139,14 +139,14 @@ else:
                                 'RATE 40H': 'GP40HC'
                             }, inplace=True)
                             
-                            # Filter out remaining raw column tracking markers safely
+                            # Strip out temporary unassigned text markers
                             df = df.loc[:, ~df.columns.str.contains('^COLUMN_|^UNNAMED|^NAN|^NONE')]
                             
-                            # Clean string values inside your actual table data uniformly
+                            # Clean cell text inputs to unlock uniform queries
                             for col in df.columns:
                                 df[col] = df[col].astype(str).str.strip()
                                 
-                            # If top table carrier data is blank, default label it to COSCO
+                            # If a top table sheet does not define carrier data explicitly, tag it as COSCO
                             if 'CARRIER' in df.columns and selected_sheet and "26" not in str(selected_sheet):
                                 mask_blank = (df['CARRIER'] == '') | (df['CARRIER'].isna()) | (df['CARRIER'].str.lower() == 'none')
                                 df.loc[mask_blank, 'CARRIER'] = 'COSCO'
@@ -155,17 +155,17 @@ else:
                                 mask = df.astype(str).apply(lambda x: x.str.lower().str.contains('|'.join(keywords))).any(axis=1)
                                 df = df[mask]
                             
-                            # Safe price sort validation logic
+                            # Dynamic price sorter alignment
                             target_sort_col = "GP20" if "GP20" in df.columns else ("RATE 20" if "RATE 20" in df.columns else None)
                             if target_sort_col and target_sort_col in df.columns:
                                 price_sort = pd.to_numeric(df[target_sort_col], errors='coerce')
                                 df = df.iloc[price_sort.argsort()]
                                 
                             if not df.empty:
-                                st.metric(f"Total Quotes Found in '{selected_sheet}'", len(df))
+                                st.metric(f"Total Quotes Found in [{selected_sheet}]", len(df))
                                 st.dataframe(df, use_container_width=True, hide_index=True) 
                             else:
-                                st.warning(f"No rows inside tab '{selected_sheet}' matched your keywords.")
+                                st.warning(f"No rows inside the sheet tab [{selected_sheet}] matched your keywords.")
                                 
                         # Case B: Handle PDF Files locally
                         elif selected_file_name.endswith(".pdf"):
