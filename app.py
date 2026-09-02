@@ -5,6 +5,8 @@ import io
 import json
 from google import genai
 from google.genai import types
+# FIX: Import BaseModel directly from pydantic instead of the genai module
+from pydantic import BaseModel
 
 # 1. Initialize Gemini Client
 client = genai.Client()
@@ -16,10 +18,10 @@ BRANCH = "main"
 FOLDER_PATH = "documents"
 
 # Define structured constraints so Gemini outputs clear columns/rows for the app table
-class TableRow(types.BaseModel):
+class TableRow(BaseModel):
     column_values: list[str]
 
-class TableStructure(types.BaseModel):
+class TableStructure(BaseModel):
     headers: list[str]
     rows: list[TableRow]
 
