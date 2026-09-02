@@ -61,7 +61,7 @@ else:
         selected_file_name = st.selectbox("Choose a freight liner database document:", available_files)
         target_file_path = os.path.join(LOCAL_FOLDER_PATH, selected_file_name)
         
-        st.info("💡 Instructions: Clear the box below to see ALL rows. Or search any keyword (e.g., 'ANL', 'Ningbo', 'Yantian') to filter your data table instantly.")
+        st.info("💡 Instructions: Clear the box below to see ALL rows. Or search any keyword (e.g., 'ANL', 'BENLINE', 'PORT') to filter your data table instantly.")
         user_query = st.text_input("Enter search keywords:")
         
         if st.button("Extract Data Table"):
@@ -87,47 +87,22 @@ else:
                             header_series = raw_df.iloc[header_row_index].copy()
                             header_series = header_series.ffill()
                             
-                            data_df = raw_df.iloc[header_row_index + 1:].copy()
+                            # Reload the data frame starting precisely from that identified header layer
+                            df = pd.read_excel(target_file_path, skiprows=header_row_index, dtype=str)
                             
-                            clean_headers = []
-                            for idx, val in enumerate(header_series):
-                                val_str = str(val).strip().upper()
-                                if val_str.startswith("UNNAMED") or val_str == "NAN" or not val_str:
-                                    if idx == 0:
-                                        clean_headers.append("CARRIER")
-                                    else:
-                                        clean_headers.append(f"COLUMN_{idx}")
-                                else:
-                                    clean_headers.append(val_str)
-                                    
-                            data_df.columns = clean_headers
+                            # Clean column headers and enforce explicit upper-case names
+                            df.columns = [str(c).strip().upper() for c in df.columns]
                             
-                            # CRITICAL CARRIER INDEX MERGE FIX
-                            data_df = data_df.reset_index()
+                            # Standard clean-up: remove unassigned placeholder columns or true empty rows
+                            df = df.dropna(how='all')
+                            df = df.loc[:, ~df.columns.str.contains('^UNNAMED|^NAN|^NONE')]
                             
-                            if "index" in data_df.columns:
-                                data_df.rename(columns={"index": "CARRIER_RAW"}, inplace=True)
-                            else:
-                                data_df.columns.values[0] = "CARRIER_RAW"
-                            
-                            if "CARRIER" in data_df.columns:
-                                data_df["CARRIER"] = data_df["CARRIER"].fillna(data_df["CARRIER_RAW"])
-                                mask_none = data_df["CARRIER"].astype(str).str.lower() == "none"
-                                data_df.loc[mask_none, "CARRIER"] = data_df.loc[mask_none, "CARRIER_RAW"]
-                            else:
-                                data_df["CARRIER"] = data_df["CARRIER_RAW"]
-                                
-                            data_df = data_df.dropna(how='all')
-                            df = data_df.loc[:, ~data_df.columns.str.contains('^COLUMN_|^UNNAMED|^NAN|^NONE|^CARRIER_RAW')]
-                            
-                            if "CARRIER" in df.columns:
-                                cols = ["CARRIER"] + [c for c in df.columns if c != "CARRIER"]
-                                df = df[cols]
-                            
+                            # Clean string values inside your actual table data uniformly
                             for col in df.columns:
                                 df[col] = df[col].astype(str).str.strip()
                                 
                             if keywords:
+                                # Safe vector search across all visible table column data
                                 mask = df.astype(str).apply(lambda x: x.str.lower().str.contains('|'.join(keywords))).any(axis=1)
                                 df = df[mask]
                             
@@ -137,11 +112,12 @@ else:
                                 
                             if not df.empty:
                                 st.metric("Total Quotes Found", len(df))
+                                # hide_index=True ensures Excel's hidden row count labels do not show up
                                 st.dataframe(df, use_container_width=True, hide_index=True) 
                             else:
                                 st.warning("No rows inside this liner file matched your keywords.")
                                 
-                        # Case B: Handle PDF Files locally (CLEANED UP INDENTS)
+                        # Case B: Handle PDF Files locally
                         elif selected_file_name.endswith(".pdf"):
                             extracted_rows = []
                             with open(target_file_path, "rb") as f:
