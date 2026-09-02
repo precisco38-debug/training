@@ -88,10 +88,17 @@ else:
                         # Reload the data frame starting precisely from that identified row layer
                         df = pd.read_excel(target_file_path, skiprows=header_row_index, dtype=str)
                         
-                        # Clean column headers
+                        # Clean column headers and enforce explicit upper-case names
                         df.columns = [str(c).strip().upper() for c in df.columns]
+                        
+                        # PRESERVE CARRIER FEATURE CRITICAL FIX:
+                        # Re-verify if any first column got truncated or masked by unnamed artifacts
+                        if len(df.columns) > 0 and df.columns[0].startswith("UNNAMED"):
+                            df.rename(columns={df.columns[0]: "CARRIER"}, inplace=True)
+                        
                         df = df.dropna(how='all')
-                        df = df.loc[:, ~df.columns.str.contains('^UNNAMED|^NAN|^NONE')]
+                        # Filter out secondary structural trailing unnamed anomalies, preserving CARRIER
+                        df = df.loc[:, ~df.columns.str.contains('^UNNAMED:_[1-9]|^NAN|^NONE')]
                         
                         if keywords:
                             # Filter across all available matrix cell blocks
