@@ -1,7 +1,6 @@
 streamlit
-google-genai
 pandas
 openpyxl
-tabulate
 requests
 PyGithub
+pypdf
