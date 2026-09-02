@@ -22,7 +22,7 @@ def get_live_file_list_local():
 
 # 2. Page Configurations
 st.set_page_config(layout="centered", page_title="Precisco Query Portal")
-available_files = get_live_file_list_local()
+available_files = get_live_file_list_secure = get_live_file_list_local()
 
 # 3. SECURE GATEKEEPER LOGIN SCREEN
 if "authenticated" not in st.session_state:
@@ -55,7 +55,6 @@ else:
 
     st.write("---")
 
-    # 100% DYNAMIC CHECK: If the folder is empty, instruct the clerk cleanly
     if not available_files:
         st.error("⚠️ No files found! Please ask the clerk to upload `.xlsx` or `.pdf` files to the GitHub `documents` folder.")
     else:
@@ -75,9 +74,10 @@ else:
                         
                         # Case A: Handle Excel Spreadsheet Files locally
                         if selected_file_name.endswith(".xlsx"):
+                            # Read everything as plain text strings from the very top row layer
                             raw_df = pd.read_excel(target_file_path, header=None, dtype=str)
                             
-                            # Find the row containing data identifiers
+                            # DYNAMIC HEADER LAYER LOCATOR
                             header_row_index = 0
                             for idx, row in raw_df.iterrows():
                                 row_text = " ".join([str(val).lower() for val in row.values if pd.notna(val)])
@@ -85,21 +85,26 @@ else:
                                     header_row_index = idx
                                     break
                             
-                            df = pd.read_excel(target_file_path, skiprows=header_row_index, dtype=str)
+                            # CRITICAL FIX FOR MERGED CELLS: Extract header row vector and un-merge columns
+                            header_series = raw_df.iloc[header_row_index].copy()
+                            # Forward-fill replaces empty cell blanks with the true merged cell value (e.g., CARRIER)
+                            header_series = header_series.ffill()
                             
-                            # Clean and fix the column headers mapping array vector layout
-                            cleaned_cols = []
-                            for i, col_name in enumerate(df.columns):
-                                col_str = str(col_name).strip().upper()
-                                # FIX: Force the very first column to be named CARRIER if it has an unnamed marker
-                                if i == 0 and col_str.startswith("UNNAMED"):
-                                    cleaned_cols.append("CARRIER")
-                                else:
-                                    cleaned_cols.append(col_str)
-                            df.columns = cleaned_cols
+                            # Extract data payload starting right after the located header row index
+                            data_df = raw_df.iloc[header_row_index + 1:].copy()
                             
-                            df = df.dropna(how='all')
-                            df = df.loc[:, ~df.columns.str.contains('^UNNAMED:_[1-9]|^NAN|^NONE')]
+                            # Assign the repaired forward-filled series map as the true column names
+                            data_df.columns = [str(c).strip().upper() for c in header_series]
+                            
+                            # Re-verify the very first column explicitly to lock in CARRIER designation
+                            if len(data_df.columns) > 0 and (data_df.columns[0].startswith("UNNAMED") or data_df.columns[0] == "NAN"):
+                                col_list = list(data_df.columns)
+                                col_list[0] = "CARRIER"
+                                data_df.columns = col_list
+                            
+                            # Clean up unnamed helper artifacts and drop completely empty placeholder rows
+                            data_df = data_df.dropna(how='all')
+                            df = data_df.loc[:, ~data_df.columns.str.contains('^UNNAMED:_[1-9]|^NAN|^NONE')]
                             
                             if keywords:
                                 mask = df.astype(str).apply(lambda x: x.str.lower().str.contains('|'.join(keywords))).any(axis=1)
@@ -110,7 +115,6 @@ else:
                                 df = df.iloc[price_sort.argsort()]
                                 
                             if not df.empty:
-                                # Display a live row counter metrics box for the team
                                 st.metric("Total Quotes Found", len(df))
                                 st.dataframe(df, use_container_width=True, height=int(35 * len(df)) + 50 if len(df) < 50 else 600)
                             else:
