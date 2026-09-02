@@ -17,7 +17,6 @@ def get_live_file_list_local():
                     valid_files.append(name)
     except Exception:
         pass
-        
     return sorted(valid_files)
 
 # 2. Page Configurations
@@ -67,11 +66,9 @@ else:
         # DYNAMIC SHEET DETECTOR LAYER
         if selected_file_name.endswith(".xlsx"):
             try:
-                # Read all sheet tab names natively from the local disk container file
                 xl = pd.ExcelFile(target_file_path, engine='openpyxl')
                 sheet_names = xl.sheet_names
                 
-                # Render a second dynamic dropdown menu to allow selection of alternative tabs
                 selected_sheet = st.selectbox(
                     "Select workbook sheet/tab to query:", 
                     sheet_names,
@@ -93,7 +90,6 @@ else:
                         
                         # Case A: Handle Excel Spreadsheet Files locally
                         if selected_file_name.endswith(".xlsx"):
-                            # Force read using the explicitly chosen workbook tab name
                             raw_df = pd.read_excel(target_file_path, sheet_name=selected_sheet, header=None, dtype=str)
                             
                             # DYNAMIC HEADER LAYER LOCATOR
@@ -107,7 +103,6 @@ else:
                             header_series = raw_df.iloc[header_row_index].copy()
                             header_series = header_series.ffill()
                             
-                            # Reload dataset slicing parameters cleanly
                             data_df = raw_df.iloc[header_row_index + 1:].copy()
                             data_df = data_df.reset_index(drop=True)
                             
@@ -137,11 +132,9 @@ else:
                                 'RATE 40H': 'GP40HC'
                             }, inplace=True)
                             
-                            # Clean string values inside your actual table data uniformly
                             for col in df.columns:
                                 df[col] = df[col].astype(str).str.strip()
                                 
-                            # If top table carrier data is blank, default label it to COSCO
                             if 'CARRIER' in df.columns and selected_sheet and "26" not in str(selected_sheet):
                                 mask_blank = (df['CARRIER'] == '') | (df['CARRIER'].isna()) | (df['CARRIER'].str.lower() == 'none')
                                 df.loc[mask_blank, 'CARRIER'] = 'COSCO'
@@ -150,7 +143,6 @@ else:
                                 mask = df.astype(str).apply(lambda x: x.str.lower().str.contains('|'.join(keywords))).any(axis=1)
                                 df = df[mask]
                             
-                            # Safe price sort validation logic
                             target_sort_col = "GP20" if "GP20" in df.columns else ("RATE 20" if "RATE 20" in df.columns else None)
                             if target_sort_col and target_sort_col in df.columns:
                                 price_sort = pd.to_numeric(df[target_sort_col], errors='coerce')
@@ -187,3 +179,10 @@ else:
                             
                             if extracted_rows:
                                 st.metric("Total Lines Found", len(extracted_rows))
+                                max_cols = max(len(r) for r in extracted_rows)
+                                headers = [f"Column {i+1}" for i in range(max_cols)]
+                                padded_rows = [r + [""] * (max_cols - len(r)) for r in extracted_rows]
+                                
+                                output_df = pd.DataFrame(padded_rows, columns=headers)
+                                st.dataframe(output_df, use_container_width=True, hide_index=True, height=int(35 * len(output_df)) + 50 if len(output_df) < 50 else 600)
+                            else:
