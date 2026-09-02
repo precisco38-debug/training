@@ -78,7 +78,7 @@ else:
                     key=f"sheet_select_{selected_file_name}"
                 )
             except Exception as e:
-                st.error(f"Error loading workbook tabs: {e}")
+                st.sidebar.error(f"Error loading workbook tabs: {e}")
         
         st.info("💡 Instructions: Clear the box below to see ALL rows. Or search any keyword (e.g., 'ANL', 'BENLINE', 'Yantian') to filter your data table instantly.")
         user_query = st.text_input("Enter search keywords:")
@@ -123,7 +123,6 @@ else:
                                     clean_headers.append(val_str)
                                     
                             data_df.columns = clean_headers
-                                
                             data_df = data_df.dropna(how='all')
                             df = data_df.loc[:, ~data_df.columns.str.contains('^COLUMN_|^UNNAMED|^NAN|^NONE')]
                             
