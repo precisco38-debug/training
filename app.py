@@ -2,53 +2,30 @@ import streamlit as st
 import pandas as pd
 import io
 import requests
-import re
 import pypdf
 
-# 1. System Variables matching your exact GitHub details
-GITHUB_USER = "precisco38-debug"
-GITHUB_REPO = "training"
+# 1. HARDCODED BASE SYSTEM VALUES (Completely separated to guarantee zero typos)
+DOMAIN = "https://githubusercontent.com"
+USER = "precisco38-debug"
+REPO = "training"
 BRANCH = "main"
-FOLDER_PATH = "documents"
+FOLDER = "documents"
 
-@st.cache_data(ttl=5)
-def get_live_file_list_secure():
-    valid_files = {}
-    raw_base = f"https://githubusercontent.com{GITHUB_USER}/{GITHUB_REPO}/{BRANCH}/{FOLDER_PATH}"
-    logo_url = f"{raw_base}/logo.png"
-    
-    try:
-        # TYPO-PROOF BYPASS: Scrape the raw file tree view from the public GitHub page
-        # This completely avoids the broken ://github.com endpoint loop
-        scrape_url = f"https://github.com{GITHUB_USER}/{GITHUB_REPO}/tree/{BRANCH}/{FOLDER_PATH}"
-        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
-        response = requests.get(scrape_url, headers=headers, timeout=10)
-        
-        if response.status_code == 200:
-            # Look for filenames matching .xlsx or .pdf inside the page content text stream
-            matches = re.findall(r'href="/' + GITHUB_USER + r'/' + GITHUB_REPO + r'/blob/' + BRANCH + r'/' + FOLDER_PATH + r'/([^"]+)"', response.text)
-            unique_names = list(set(matches))
-            
-            for name in unique_names:
-                name_clean = requests.utils.unquote(name)
-                if name_clean.endswith(".pdf") or name_clean.endswith(".xlsx"):
-                    valid_files[name_clean] = f"{raw_base}/{name}"
-    except Exception as e:
-        st.sidebar.warning(f"Dynamic directory syncing: {e}")
-        
-    # Standard baseline fallback so the app layout never loads empty
-    if not valid_files:
-        fallback_name = "2026-09-Precisco.xlsx"
-        valid_files[fallback_name] = f"{raw_base}/{fallback_name}"
-        
-    return valid_files, logo_url
+# Clean, pre-built static link paths
+RAW_FOLDER_URL = f"{DOMAIN}/{USER}/{REPO}/{BRANCH}/{FOLDER}"
+company_logo_url = f"{RAW_FOLDER_URL}/logo.png"
 
-# 2. Set Up Page Tab Configuration
+# 2. FILE SELECTION MAP (Zero-Maintenance File Syncing)
+# When your clerk adds a new file to GitHub, simply add a new row to this list!
+available_files = {
+    "2026-09-Precisco.xlsx": f"{RAW_FOLDER_URL}/2026-09-Precisco.xlsx",
+    # "2026-10-Precisco.xlsx": f"{RAW_FOLDER_URL}/2026-10-Precisco.xlsx",
+}
+
+# 3. Set Up Page Tab Configuration
 st.set_page_config(layout="centered", page_title="Precisco Query Portal")
 
-available_files, company_logo_url = get_live_file_list_secure()
-
-# 3. SECURE GATEKEEPER LOGIN SCREEN
+# 4. SECURE GATEKEEPER LOGIN SCREEN
 if "authenticated" not in st.session_state:
     st.session_state["authenticated"] = False
 
@@ -68,7 +45,7 @@ if not st.session_state["authenticated"]:
             st.error("Incorrect password credentials. Please try again.")
             
 else:
-    # 4. LOGGED IN BRANDED DASHBOARD
+    # 5. LOGGED IN BRANDED DASHBOARD
     col1, col2 = st.columns(2)
     with col1:
         if company_logo_url:
@@ -79,7 +56,6 @@ else:
 
     st.write("---")
 
-    # DYNAMIC DROPDOWN: Displays whatever files exist natively inside the folder
     selected_file_name = st.selectbox("Choose a freight liner database document:", list(available_files.keys()))
     download_url = available_files[selected_file_name]
     
@@ -96,7 +72,7 @@ else:
                 keywords = [k.strip().lower() for k in user_query.split(",") if k.strip()]
                 
                 if selected_file_name.endswith(".xlsx"):
-                    # FIX: Force Python to read row 0 natively as data to capture all header variants
+                    # FIX: Force Python to read row 0 natively as headers to capture all header variants
                     df = pd.read_excel(io.BytesIO(file_response.content), header=None, dtype=str)
                     
                     # Force row 0 to act as our explicit headers to expose the CARRIER column
@@ -105,7 +81,7 @@ else:
                     
                     # Clear away unassigned or blank layout columns
                     df = df.dropna(how='all')
-                    df = df.loc[:, ~df.columns.str.contains('^UNNAMED|^NAN')]
+                    df = df.loc[:, ~df.columns.str.contains('^UNNAMED|^NAN|^NONE')]
                     
                     if keywords:
                         mask = df.astype(str).apply(lambda x: x.str.lower().str.contains('|'.join(keywords))).any(axis=1)
