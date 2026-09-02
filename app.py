@@ -4,7 +4,7 @@ import io
 import os
 import pypdf
 
-# 1. Local Hard Drive Folder Path
+# 1. Local Hard Drive Folder Path Configuration
 LOCAL_FOLDER_PATH = "documents"
 logo_path = os.path.join(LOCAL_FOLDER_PATH, "logo.png")
 
@@ -68,11 +68,15 @@ else:
         if selected_file_name.endswith(".xlsx"):
             try:
                 # Read all sheet tab names natively from the local disk container file
-                xl = pd.ExcelFile(target_file_path)
+                xl = pd.ExcelFile(target_file_path, engine='openpyxl')
                 sheet_names = xl.sheet_names
                 
                 # Render a second dynamic dropdown menu to allow selection of alternative tabs
-                selected_sheet = st.selectbox("Select workbook sheet/tab to query:", sheet_names)
+                selected_sheet = st.selectbox(
+                    "Select workbook sheet/tab to query:", 
+                    sheet_names,
+                    key=f"sheet_select_{selected_file_name}"
+                )
             except Exception as e:
                 st.error(f"Error loading workbook tabs: {e}")
         
@@ -89,14 +93,14 @@ else:
                         
                         # Case A: Handle Excel Spreadsheet Files locally
                         if selected_file_name.endswith(".xlsx"):
-                            # Force read using the explicitly chosen workbook tab name string index
+                            # Force read using the explicitly chosen workbook tab name
                             raw_df = pd.read_excel(target_file_path, sheet_name=selected_sheet, header=None, dtype=str)
                             
                             # DYNAMIC HEADER LAYER LOCATOR
                             header_row_index = 0
-                            for idx, row in raw_df.head(10).iterrows():
+                            for idx, row in raw_df.head(15).iterrows():
                                 row_text = " ".join([str(val).lower() for val in row.values if pd.notna(val)])
-                                if "carrier" in row_text or "port" in row_text or "region" in row_text or "location" in row_text:
+                                if "carrier" in row_text or "port" in row_text or "region" in row_text or "location" in row_text or "a/c/t/d/w" in row_text:
                                     header_row_index = idx
                                     break
                             
@@ -123,8 +127,25 @@ else:
                             data_df = data_df.dropna(how='all')
                             df = data_df.loc[:, ~data_df.columns.str.contains('^COLUMN_|^UNNAMED|^NAN|^NONE')]
                             
+                            # Map alternate top table column formats to standardized names automatically
+                            df.rename(columns={
+                                'A/C/T/D/W': 'CARRIER', 
+                                'A/C/T/W': 'CARRIER', 
+                                'LOCATION': 'PORT',
+                                'OVER LOCATION': 'VIA / OVER LOCATION',
+                                'RATE 20': 'GP20', 
+                                'RATE 40': 'GP40', 
+                                'RATE 40H': 'GP40HC'
+                            }, inplace=True)
+                            
+                            # Clean string values inside your actual table data uniformly
                             for col in df.columns:
                                 df[col] = df[col].astype(str).str.strip()
+                                
+                            # If top table carrier data is blank, default label it to COSCO
+                            if 'CARRIER' in df.columns and selected_sheet and "26" not in str(selected_sheet):
+                                mask_blank = (df['CARRIER'] == '') | (df['CARRIER'].isna()) | (df['CARRIER'].str.lower() == 'none')
+                                df.loc[mask_blank, 'CARRIER'] = 'COSCO'
                                 
                             if keywords:
                                 mask = df.astype(str).apply(lambda x: x.str.lower().str.contains('|'.join(keywords))).any(axis=1)
@@ -167,13 +188,3 @@ else:
                             
                             if extracted_rows:
                                 st.metric("Total Lines Found", len(extracted_rows))
-                                max_cols = max(len(r) for r in extracted_rows)
-                                headers = [f"Column {i+1}" for i in range(max_cols)]
-                                padded_rows = [r + [""] * (max_cols - len(r)) for r in extracted_rows]
-                                
-                                output_df = pd.DataFrame(padded_rows, columns=headers)
-                                st.dataframe(output_df, use_container_width=True, hide_index=True, height=int(35 * len(output_df)) + 50 if len(output_df) < 50 else 600)
-                            else:
-                                st.warning("No data points found matching those keywords in this PDF.")
-                except Exception as e:
-                    st.error(f"Local storage read error: {e}")
