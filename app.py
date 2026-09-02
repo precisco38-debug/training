@@ -87,11 +87,8 @@ else:
                             header_series = raw_df.iloc[header_row_index].copy()
                             header_series = header_series.ffill()
                             
-                            # Extract layout payload cleanly
                             data_df = raw_df.iloc[header_row_index + 1:].copy()
-                            data_df = data_df.reset_index(drop=True)
                             
-                            # Convert header labels cleanly to uppercase text
                             clean_headers = []
                             for idx, val in enumerate(header_series):
                                 val_str = str(val).strip().upper()
@@ -103,19 +100,34 @@ else:
                                 else:
                                     clean_headers.append(val_str)
                                     
-                            # CRITICAL FIX: Safe mapping array assignment directly locks data columns
                             data_df.columns = clean_headers
+                            
+                            # CRITICAL CARRIER INDEX MERGE FIX
+                            data_df = data_df.reset_index()
+                            
+                            if "index" in data_df.columns:
+                                data_df.rename(columns={"index": "CARRIER_RAW"}, inplace=True)
+                            else:
+                                data_df.columns.values[0] = "CARRIER_RAW"
+                            
+                            if "CARRIER" in data_df.columns:
+                                data_df["CARRIER"] = data_df["CARRIER"].fillna(data_df["CARRIER_RAW"])
+                                mask_none = data_df["CARRIER"].astype(str).str.lower() == "none"
+                                data_df.loc[mask_none, "CARRIER"] = data_df.loc[mask_none, "CARRIER_RAW"]
+                            else:
+                                data_df["CARRIER"] = data_df["CARRIER_RAW"]
                                 
                             data_df = data_df.dropna(how='all')
-                            # Strip remaining temporary padding headers out of the display grid layout
-                            df = data_df.loc[:, ~data_df.columns.str.contains('^COLUMN_|^UNNAMED|^NAN|^NONE')]
+                            df = data_df.loc[:, ~data_df.columns.str.contains('^COLUMN_|^UNNAMED|^NAN|^NONE|^CARRIER_RAW')]
                             
-                            # Clean string values uniformly to unlock global matching search filters
+                            if "CARRIER" in df.columns:
+                                cols = ["CARRIER"] + [c for c in df.columns if c != "CARRIER"]
+                                df = df[cols]
+                            
                             for col in df.columns:
                                 df[col] = df[col].astype(str).str.strip()
                                 
                             if keywords:
-                                # Safe vector mapping verifies carrier rows matching your exact string searches
                                 mask = df.astype(str).apply(lambda x: x.str.lower().str.contains('|'.join(keywords))).any(axis=1)
                                 df = df[mask]
                             
@@ -125,11 +137,11 @@ else:
                                 
                             if not df.empty:
                                 st.metric("Total Quotes Found", len(df))
-                                st.dataframe(df, use_container_width=True) 
+                                st.dataframe(df, use_container_width=True, hide_index=True) 
                             else:
                                 st.warning("No rows inside this liner file matched your keywords.")
                                 
-                        # Case B: Handle PDF Files locally
+                        # Case B: Handle PDF Files locally (CLEANED UP INDENTS)
                         elif selected_file_name.endswith(".pdf"):
                             extracted_rows = []
                             with open(target_file_path, "rb") as f:
@@ -159,7 +171,7 @@ else:
                                 padded_rows = [r + [""] * (max_cols - len(r)) for r in extracted_rows]
                                 
                                 output_df = pd.DataFrame(padded_rows, columns=headers)
-                                st.dataframe(output_df, use_container_width=True, height=int(35 * len(output_df)) + 50 if len(output_df) < 50 else 600)
+                                st.dataframe(output_df, use_container_width=True, hide_index=True, height=int(35 * len(output_df)) + 50 if len(output_df) < 50 else 600)
                             else:
                                 st.warning("No data points found matching those keywords in this PDF.")
                 except Exception as e:
