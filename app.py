@@ -4,7 +4,7 @@ import io
 import os
 import pypdf
 
-# 1. Local Hard Drive Folder Path
+# 1. Local Hard Drive Folder Path Configuration
 LOCAL_FOLDER_PATH = "documents"
 logo_path = os.path.join(LOCAL_FOLDER_PATH, "logo.png")
 
@@ -17,7 +17,6 @@ def get_live_file_list_local():
                     valid_files.append(name)
     except Exception:
         pass
-        
     return sorted(valid_files)
 
 # 2. Page Configurations
@@ -58,6 +57,7 @@ else:
     if not available_files:
         st.error("⚠️ No files found! Please ask the clerk to upload `.xlsx` or `.pdf` files to the GitHub `documents` folder.")
     else:
+        # File selector dropdown
         selected_file_name = st.selectbox("Choose a freight liner database document:", available_files)
         target_file_path = os.path.join(LOCAL_FOLDER_PATH, selected_file_name)
         
@@ -74,7 +74,7 @@ else:
                 if len(all_tabs) > 1:
                     selected_sheet = st.selectbox("Select workbook sheet/tab to query:", all_tabs)
                 else:
-                    selected_sheet = all_tabs[0]
+                    selected_sheet = all_tabs[0] if all_tabs else None
             except Exception as e:
                 st.sidebar.error(f"Workbook index trace issue: {e}")
 
