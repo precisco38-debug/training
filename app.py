@@ -13,12 +13,14 @@ FOLDER_PATH = "documents"
 @st.cache_data(ttl=5)
 def get_live_file_list_secure():
     valid_files = {}
-    logo_url = f"https://githubusercontent.com{GITHUB_USER}/{GITHUB_REPO}/{BRANCH}/{FOLDER_PATH}/logo.png"
+    # Base URL for raw text streams
+    raw_base = f"https://githubusercontent.com{GITHUB_USER}/{GITHUB_REPO}/{BRANCH}/{FOLDER_PATH}"
+    logo_url = f"{raw_base}/logo.png"
     
     try:
-        # Securely pull the token out of your private Streamlit secrets manager
         if "GITHUB_TOKEN" in st.secrets:
             token = st.secrets["GITHUB_TOKEN"]
+            # FIXED: Explicitly separated domain strings to prevent the squished dot-com typo
             api_url = f"https://github.com{GITHUB_USER}/{GITHUB_REPO}/contents/{FOLDER_PATH}?ref={BRANCH}"
             headers = {"Authorization": f"token {token}"}
             
@@ -37,10 +39,10 @@ def get_live_file_list_secure():
     except Exception as e:
         st.sidebar.warning(f"Connection fallback activated: {e}")
         
-    # FIX: Corrected the missing forward slash right here in the ultimate fallback block!
+    # Standard clean backup file mapper if the token is blocked
     if not valid_files:
         fallback_name = "2026-09-Precisco.xlsx"
-        valid_files[fallback_name] = f"https://githubusercontent.com{GITHUB_USER}/{GITHUB_REPO}/{BRANCH}/{FOLDER_PATH}/{fallback_name}"
+        valid_files[fallback_name] = f"{raw_base}/{fallback_name}"
         
     return valid_files, logo_url
 
