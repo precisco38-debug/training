@@ -4,14 +4,13 @@ import io
 import os
 import pypdf
 
-# 1. Local Hard Drive Folder Path (No internet URLs needed!)
+# 1. Local Hard Drive Folder Path
 LOCAL_FOLDER_PATH = "documents"
 logo_path = os.path.join(LOCAL_FOLDER_PATH, "logo.png")
 
 def get_live_file_list_local():
     valid_files = []
     try:
-        # Scan the local hard drive folder directly
         if os.path.exists(LOCAL_FOLDER_PATH):
             for name in os.listdir(LOCAL_FOLDER_PATH):
                 if name.endswith(".pdf") or name.endswith(".xlsx"):
@@ -19,7 +18,6 @@ def get_live_file_list_local():
     except Exception:
         pass
         
-    # Safety fallback if the folder scanning encounters an OS lock
     if not valid_files:
         valid_files = ["2026-09-Precisco.xlsx"]
         
@@ -60,11 +58,10 @@ else:
 
     st.write("---")
 
-    # DYNAMIC DROPDOWN: Instantly lists whatever files exist inside your repository folder
     selected_file_name = st.selectbox("Choose a freight liner database document:", available_files)
     target_file_path = os.path.join(LOCAL_FOLDER_PATH, selected_file_name)
     
-    st.info("💡 Instructions: Clear the box below to see ALL rows. Or search any keyword (e.g., 'HPL', 'Ningbo', '300') to filter your data table instantly.")
+    st.info("💡 Instructions: Clear the box below to see ALL rows. Or search any keyword (e.g., 'Asia', 'Singapore', 'HPL') to filter your data table instantly.")
     user_query = st.text_input("Enter search keywords:")
     
     if st.button("Extract Data Table"):
@@ -77,15 +74,27 @@ else:
                     
                     # Case A: Handle Excel Spreadsheet Files locally
                     if selected_file_name.endswith(".xlsx"):
-                        df = pd.read_excel(target_file_path, header=None, dtype=str)
+                        # Read the full raw sheet to locate data positions safely
+                        raw_df = pd.read_excel(target_file_path, header=None, dtype=str)
                         
-                        df.columns = [str(c).strip().upper() for c in df.iloc[0]]
-                        df = df[1:]
+                        # DYNAMIC HEADER DETECTOR: Find the row containing "CARRIER", "PORT", or "REGION"
+                        header_row_index = 0
+                        for idx, row in raw_df.iterrows():
+                            row_text = " ".join([str(val).lower() for val in row.values if pd.notna(val)])
+                            if "carrier" in row_text or "port" in row_text or "region" in row_text:
+                                header_row_index = idx
+                                break
                         
+                        # Reload the data frame starting precisely from that identified row layer
+                        df = pd.read_excel(target_file_path, skiprows=header_row_index, dtype=str)
+                        
+                        # Clean column headers
+                        df.columns = [str(c).strip().upper() for c in df.columns]
                         df = df.dropna(how='all')
                         df = df.loc[:, ~df.columns.str.contains('^UNNAMED|^NAN|^NONE')]
                         
                         if keywords:
+                            # Filter across all available matrix cell blocks
                             mask = df.astype(str).apply(lambda x: x.str.lower().str.contains('|'.join(keywords))).any(axis=1)
                             df = df[mask]
                         
