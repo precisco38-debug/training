@@ -78,7 +78,6 @@ else:
         st.info("💡 Instructions: Clear the box below to see ALL rows. Or search any keyword (e.g., 'ANL', 'BENLINE', 'Yantian') to filter your data table instantly.")
         user_query = st.text_input("Enter search keywords:")
         
-        # --- FIXED BLOCK: REMOVED ST.BUTTON TRAP FOR LIVE DATA INTERACTION ---
         if not os.path.exists(target_file_path):
             st.error(f"File {selected_file_name} was not found on the local disk path.")
         else:
@@ -87,63 +86,18 @@ else:
                     keywords = [k.strip().lower() for k in user_query.split(",") if k.strip()]
                     
                     if selected_file_name.endswith(".xlsx"):
-                        raw_df = pd.read_excel(target_file_path, sheet_name=selected_sheet, header=None, dtype=str)
+                        # Read file natively as is without structural mutations
+                        df = pd.read_excel(target_file_path, sheet_name=selected_sheet, dtype=str)
                         
-                        header_row_index = 0
-                        for idx, row in raw_df.head(15).iterrows():
-                            row_text = " ".join([str(val).lower() for val in row.values if pd.notna(val)])
-                            if any(x in row_text for x in ["carrier", "port", "region", "location", "a/c/t/d/w"]):
-                                header_row_index = idx
-                                break
-                        
-                        header_series = raw_df.iloc[header_row_index].copy().ffill()
-                        data_df = raw_df.iloc[header_row_index + 1:].copy().reset_index(drop=True)
-                        
-                        clean_headers = []
-                        for idx, val in enumerate(header_series):
-                            val_str = str(val).strip().upper()
-                            if val_str.startswith("UNNAMED") or val_str == "NAN" or not val_str:
-                                clean_headers.append("CARRIER" if idx == 0 else f"COLUMN_{idx}")
-                            else:
-                                clean_headers.append(val_str)
-                                
-                        data_df.columns = clean_headers
-                        data_df = data_df.dropna(how='all')
-                        df = data_df.copy()
-                        
-                        df.rename(columns={
-                            'A/C/T/D/W': 'CARRIER', 
-                            'A/C/T/W': 'CARRIER', 
-                            'LOCATION': 'PORT',
-                            'OVER LOCATION': 'VIA / OVER LOCATION',
-                            'TRANSPORT MODE': 'MODE',
-                            'RATE 20': 'GP20', 
-                            'RATE 40': 'GP40', 
-                            'RATE 40H': 'GP40HC'
-                        }, inplace=True)
-                        
-                        df = df.loc[:, ~df.columns.str.startswith(('COLUMN_', 'UNNAMED'))]
-                        
-                        for col in df.columns:
-                            df[col] = df[col].astype(str).str.strip()
-                            
-                        if 'CARRIER' in df.columns and selected_sheet and "26" not in str(selected_sheet):
-                            mask_blank = (df['CARRIER'] == '') | (df['CARRIER'].isna()) | (df['CARRIER'].str.lower() == 'none')
-                            df.loc[mask_blank, 'CARRIER'] = 'COSCO'
-                            
+                        # Filter rows using text criteria if keywords are supplied
                         if keywords:
                             pattern = '|'.join(keywords)
                             mask = df.astype(str).apply(lambda x: x.str.lower().str.contains(pattern, na=False)).any(axis=1)
                             df = df[mask]
-                        
-                        target_sort_col = "GP20" if "GP20" in df.columns else ("RATE 20" if "RATE 20" in df.columns else None)
-                        if target_sort_col and target_sort_col in df.columns:
-                            df["_sort_numeric"] = pd.to_numeric(df[target_sort_col], errors='coerce')
-                            df = df.sort_values(by="_sort_numeric", na_position='last').drop(columns=["_sort_numeric"])
                             
                         if not df.empty:
-                            st.metric(f"Total Quotes Found in '{selected_sheet}'", len(df))
-                            st.dataframe(df, use_container_width=True, hide_index=True) 
+                            st.metric(f"Total Rows Found in '{selected_sheet}'", len(df))
+                            st.dataframe(df, use_container_width=True, hide_index=False) 
                         else:
                             st.warning(f"No rows inside tab '{selected_sheet}' matched your keywords.")
                             
