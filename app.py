@@ -63,26 +63,27 @@ else:
         
         selected_sheet = None
         
-        # SAFE MULTI-SHEET PROBING LAYER
+        # DYNAMIC SHEET DETECTOR LAYER
         if selected_file_name.endswith(".xlsx"):
             try:
-                # Open Excel file metadata structure to list tab indices instantly
+                # Read all sheet tab names natively from the local disk container file
                 xl = pd.ExcelFile(target_file_path, engine='openpyxl')
-                all_tabs = xl.sheet_names
+                sheet_names = xl.sheet_names
                 
-                # ONLY display the dropdown UI element if the workbook has 2 or more tabs
-                if len(all_tabs) > 1:
-                    selected_sheet = st.selectbox("Select workbook sheet/tab to query:", all_tabs)
-                else:
-                    selected_sheet = all_tabs[0] if all_tabs else None
+                # Render a second dynamic dropdown menu to allow selection of alternative tabs
+                selected_sheet = st.selectbox(
+                    "Select workbook sheet/tab to query:", 
+                    sheet_names,
+                    key=f"sheet_select_{selected_file_name}"
+                )
             except Exception as e:
-                st.sidebar.error(f"Workbook index trace issue: {e}")
-
-        st.info("💡 Instructions: Clear the box below to see ALL rows. Or search any keyword (e.g., 'ANL', 'BENLINE', 'PORT') to filter your data table instantly.")
+                st.sidebar.error(f"Error loading workbook tabs: {e}")
+        
+        st.info("💡 Instructions: Clear the box below to see ALL rows. Or search any keyword (e.g., 'ANL', 'BENLINE', 'Yantian') to filter your data table instantly.")
         user_query = st.text_input("Enter search keywords:")
         
         if st.button("Extract Data Table"):
-            with st.spinner("Reading file from local disk (Instant)..."):
+            with st.spinner("Reading file target matrix locally (Instant)..."):
                 try:
                     if not os.path.exists(target_file_path):
                         st.error(f"File {selected_file_name} was not found on the local disk path.")
@@ -91,12 +92,12 @@ else:
                         
                         # Case A: Handle Excel Spreadsheet Files locally
                         if selected_file_name.endswith(".xlsx"):
-                            # Read everything as a single raw text matrix first to locate header safely
+                            # Force read using the explicitly chosen workbook tab name
                             raw_df = pd.read_excel(target_file_path, sheet_name=selected_sheet, header=None, dtype=str)
                             
-                            # DYNAMIC HEADER DETECTOR LOOP: Scan top rows to locate the starting line of the table
+                            # DYNAMIC HEADER LAYER LOCATOR
                             header_row_index = 0
-                            for idx, row in raw_df.head(20).iterrows():
+                            for idx, row in raw_df.head(15).iterrows():
                                 row_text = " ".join([str(val).lower() for val in row.values if pd.notna(val)])
                                 if "carrier" in row_text or "port" in row_text or "region" in row_text or "location" in row_text or "a/c/t/d/w" in row_text:
                                     header_row_index = idx
@@ -105,7 +106,7 @@ else:
                             header_series = raw_df.iloc[header_row_index].copy()
                             header_series = header_series.ffill()
                             
-                            # Extract dataset payload rows cleanly
+                            # Reload dataset slicing parameters cleanly
                             data_df = raw_df.iloc[header_row_index + 1:].copy()
                             data_df = data_df.reset_index(drop=True)
                             
@@ -151,7 +152,6 @@ else:
                                 df.loc[mask_blank, 'CARRIER'] = 'COSCO'
                                 
                             if keywords:
-                                # Safe vector search across all visible table column data
                                 mask = df.astype(str).apply(lambda x: x.str.lower().str.contains('|'.join(keywords))).any(axis=1)
                                 df = df[mask]
                             
@@ -186,3 +186,4 @@ else:
                                                 matches = True
                                                 
                                             if matches:
+                                                parts = [p.strip() for p in clean_line.split("  ") if p.strip()]
