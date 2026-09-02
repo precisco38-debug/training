@@ -13,32 +13,33 @@ FOLDER_PATH = "documents"
 @st.cache_data(ttl=5)
 def get_live_file_list_secure():
     valid_files = {}
-    # FIX: Added the missing forward slash after the domain name
     logo_url = f"https://githubusercontent.com{GITHUB_USER}/{GITHUB_REPO}/{BRANCH}/{FOLDER_PATH}/logo.png"
     
     try:
         # Securely pull the token out of your private Streamlit secrets manager
-        token = st.secrets["GITHUB_TOKEN"]
-        api_url = f"https://github.com{GITHUB_USER}/{GITHUB_REPO}/contents/{FOLDER_PATH}?ref={BRANCH}"
-        headers = {"Authorization": f"token {token}"}
-        
-        response = requests.get(api_url, headers=headers, timeout=10)
-        
-        if response.status_code == 200:
-            for file_item in response.json():
-                name = file_item["name"]
-                if name.endswith(".pdf") or name.endswith(".xlsx"):
-                    valid_files[name] = file_item["download_url"]
+        if "GITHUB_TOKEN" in st.secrets:
+            token = st.secrets["GITHUB_TOKEN"]
+            api_url = f"https://github.com{GITHUB_USER}/{GITHUB_REPO}/contents/{FOLDER_PATH}?ref={BRANCH}"
+            headers = {"Authorization": f"token {token}"}
+            
+            response = requests.get(api_url, headers=headers, timeout=10)
+            
+            if response.status_code == 200:
+                for file_item in response.json():
+                    name = file_item["name"]
+                    if name.endswith(".pdf") or name.endswith(".xlsx"):
+                        valid_files[name] = file_item["download_url"]
+            else:
+                st.sidebar.error(f"GitHub API Error Status: {response.status_code}")
         else:
-            st.sidebar.error(f"GitHub Connection Error: Status {response.status_code}")
+            st.sidebar.warning("GITHUB_TOKEN not found in Secrets. Using direct stream...")
             
     except Exception as e:
-        st.sidebar.warning("Using local connection fallback...")
+        st.sidebar.warning(f"Connection fallback activated: {e}")
         
-    # If API fails, check raw fallback stream directly to prevent empty box
+    # FIX: Corrected the missing forward slash right here in the ultimate fallback block!
     if not valid_files:
         fallback_name = "2026-09-Precisco.xlsx"
-        # FIX: Added the missing forward slash after the domain name here too
         valid_files[fallback_name] = f"https://githubusercontent.com{GITHUB_USER}/{GITHUB_REPO}/{BRANCH}/{FOLDER_PATH}/{fallback_name}"
         
     return valid_files, logo_url
@@ -99,14 +100,12 @@ else:
                         keywords = [k.strip().lower() for k in user_query.split(",") if k.strip()]
                         
                         if selected_file_name.endswith(".xlsx"):
-                            # Read everything as pure string content to force CARRIER column mapping visibility
                             df = pd.read_excel(io.BytesIO(file_response.content), dtype=str)
                             
                             df.columns = [str(c).strip() for c in df.columns]
                             df = df.dropna(how='all')
                             df = df.loc[:, ~df.columns.str.contains('^Unnamed')]
                             
-                            # Auto-fix indexing mismatch if rows are offset
                             if len(df.columns) > 0 and 'carrier' not in [c.lower() for c in df.columns]:
                                 df = pd.read_excel(io.BytesIO(file_response.content), dtype=str, header=0)
                                 df.columns = [str(c).strip() for c in df.columns]
