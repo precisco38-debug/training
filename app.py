@@ -87,7 +87,9 @@ else:
                             header_series = raw_df.iloc[header_row_index].copy()
                             header_series = header_series.ffill()
                             
+                            # Extract layout payload cleanly
                             data_df = raw_df.iloc[header_row_index + 1:].copy()
+                            data_df = data_df.reset_index(drop=True)
                             
                             # Convert header labels cleanly to uppercase text
                             clean_headers = []
@@ -101,12 +103,8 @@ else:
                                 else:
                                     clean_headers.append(val_str)
                                     
+                            # CRITICAL FIX: Safe mapping array assignment directly locks data columns
                             data_df.columns = clean_headers
-                            
-                            # FIX FOR CARRIER DATA: Force push index tracking back into visible columns
-                            data_df = data_df.reset_index(drop=True)
-                            if len(data_df.columns) > 0 and data_df.columns[0] != "CARRIER":
-                                data_df.rename(columns={data_df.columns[0]: "CARRIER"}, inplace=True)
                                 
                             data_df = data_df.dropna(how='all')
                             # Strip remaining temporary padding headers out of the display grid layout
@@ -117,7 +115,7 @@ else:
                                 df[col] = df[col].astype(str).str.strip()
                                 
                             if keywords:
-                                # Safe vector mapping verifies carrier rows matching your exact string searches (like ANL)
+                                # Safe vector mapping verifies carrier rows matching your exact string searches
                                 mask = df.astype(str).apply(lambda x: x.str.lower().str.contains('|'.join(keywords))).any(axis=1)
                                 df = df[mask]
                             
@@ -127,7 +125,7 @@ else:
                                 
                             if not df.empty:
                                 st.metric("Total Quotes Found", len(df))
-                                st.dataframe(df, use_container_width=False) # Fixed width prevents text stretching
+                                st.dataframe(df, use_container_width=True) 
                             else:
                                 st.warning("No rows inside this liner file matched your keywords.")
                                 
