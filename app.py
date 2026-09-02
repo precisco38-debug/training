@@ -59,7 +59,8 @@ if not st.session_state["authenticated"]:
             
 else:
     # 4. LOGGED IN BRANDED DASHBOARD
-    col1, col2 = st.columns()
+    # FIX: Explicitly passed the number 2 into columns to clear the TypeError snag
+    col1, col2 = st.columns(2)
     with col1:
         if company_logo_url:
             st.image(company_logo_url, use_container_width=True)
@@ -89,7 +90,6 @@ else:
                     
                     # Case A: Processing Excel spreadsheet streams natively
                     if selected_file_name.endswith(".xlsx"):
-                        # FIX: Read spreadsheet and ensure row 1 is strictly treated as header
                         df = pd.read_excel(io.BytesIO(file_response.content), header=0)
                         
                         # Clean column names by removing hidden spaces or un-named anomalies
@@ -100,6 +100,12 @@ else:
                             # Force search capability across ALL columns (including Carrier)
                             mask = df.astype(str).apply(lambda x: x.str.lower().str.contains('|'.join(keywords))).any(axis=1)
                             df = df[mask]
+                        
+                        # AUTOMATIC SMART SORT: Automatically sorts rows by lowest GP20 price rate
+                        if "GP20" in df.columns:
+                            # Safely convert price cells to numbers for accurate mathematical ranking
+                            price_sort = pd.to_numeric(df["GP20"], errors='coerce')
+                            df = df.iloc[price_sort.argsort()]
                             
                         if not df.empty:
                             st.dataframe(df, use_container_width=True, height=int(35 * len(df)) + 50 if len(df) < 50 else 600)
