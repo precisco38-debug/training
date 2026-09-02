@@ -37,14 +37,13 @@ available_files = get_live_file_list_secure()
 if not available_files:
     st.warning(f"No valid .pdf or .xlsx documents found inside your `documents` folder yet.")
 else:
-    # Dropdown loads automatically from your repo's 'documents' folder
     selected_file_name = st.selectbox("Choose a document to query:", list(available_files.keys()))
     download_url = available_files[selected_file_name]
     
-    st.info("💡 Instructions: Type the keywords you want to search for, separated by commas (e.g., 'Singapore, 40ft, Active'). The app will instantly find those rows.")
+    st.info("💡 Instructions: Clear the box below and click the button to see ALL rows. Or type specific keywords separated by commas (e.g., 'Asia, Singapore, Durban') to filter rows instantly.")
     user_query = st.text_input("Enter search keywords:")
     
-    if st.button("Extract Data Table") and user_query:
+    if st.button("Extract Data Table"):
         with st.spinner("Processing file locally (Instant)..."):
             file_response = requests.get(download_url)
             
@@ -64,9 +63,8 @@ else:
                         df = df[mask]
                         
                     if not df.empty:
-                        st.dataframe(df, use_container_width=True)
-                        csv_data = df.to_csv(index=False).encode('utf-8')
-                        st.download_button("📥 Download Result as CSV", data=csv_data, file_name="extracted_excel.csv", mime="text/csv")
+                        # Renders interactive UI table tall enough to view up to 50 rows at once without scrollbars
+                        st.dataframe(df, use_container_width=True, height=int(35 * len(df)) + 50 if len(df) < 50 else 600)
                     else:
                         st.warning("No rows matched your keywords in this spreadsheet.")
                     
@@ -91,23 +89,16 @@ else:
                                     matches = True
                                     
                                 if matches:
-                                    # Split line by multiple spaces to try and form clean tabular chunks
                                     parts = [p.strip() for p in clean_line.split("  ") if p.strip()]
                                     if parts:
                                         extracted_rows.append(parts)
                     
                     if extracted_rows:
-                        # Find the longest row to make columns align evenly
                         max_cols = max(len(r) for r in extracted_rows)
                         headers = [f"Column {i+1}" for i in range(max_cols)]
-                        
-                        # Pad shorter rows with empty spaces so table fits perfectly
                         padded_rows = [r + [""] * (max_cols - len(r)) for r in extracted_rows]
                         
                         output_df = pd.DataFrame(padded_rows, columns=headers)
-                        st.dataframe(output_df, use_container_width=True)
-                        
-                        csv_data = output_df.to_csv(index=False).encode('utf-8')
-                        st.download_button("📥 Download Result as CSV", data=csv_data, file_name="extracted_pdf_table.csv", mime="text/csv")
+                        st.dataframe(output_df, use_container_width=True, height=int(35 * len(output_df)) + 50 if len(output_df) < 50 else 600)
                     else:
                         st.warning("No matching lines found inside this PDF document.")
