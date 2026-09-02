@@ -1,29 +1,15 @@
 import streamlit as st
 import pandas as pd
 import io
-import json
 import requests
 from github import Github
-from google import genai
-from google.genai import types
-from pydantic import BaseModel
+import pypdf
 
-# 1. Initialize Gemini Client
-client = genai.Client()
-
-# 2. Hardcoded System Variables matching your exact GitHub details
+# 1. Hardcoded System Variables matching your exact GitHub details
 GITHUB_USER = "precisco38-debug"
 GITHUB_REPO = "training"
 BRANCH = "main"
 FOLDER_PATH = "documents"
-
-# Define structured constraints so Gemini outputs clear columns/rows for the app table
-class TableRow(BaseModel):
-    column_values: list[str]
-
-class TableStructure(BaseModel):
-    headers: list[str]
-    rows: list[TableRow]
 
 @st.cache_data(ttl=15)
 def get_live_file_list_secure():
@@ -42,68 +28,86 @@ def get_live_file_list_secure():
         st.error(f"GitHub safe bridge connection error: {e}")
         return {}
 
-# 3. Streamlit Interface Build
+# 2. Streamlit Interface Build
 st.set_page_config(layout="centered", page_title="Universal Query System")
-st.title("🔍 Multi-File Query System")
+st.title("⚡ Enterprise Fast Query System (POC)")
 
 available_files = get_live_file_list_secure()
 
 if not available_files:
-    st.warning(f"No valid .pdf or .xlsx documents found inside your `documents` folder yet. Ensure your clerk has uploaded files to GitHub.")
+    st.warning(f"No valid .pdf or .xlsx documents found inside your `documents` folder yet.")
 else:
+    # Dropdown loads automatically from your repo's 'documents' folder
     selected_file_name = st.selectbox("Choose a document to query:", list(available_files.keys()))
     download_url = available_files[selected_file_name]
     
-    user_query = st.text_input(f"What data would you like to extract from '{selected_file_name}' into a table?")
+    st.info("💡 Instructions: Type the keywords you want to search for, separated by commas (e.g., 'Singapore, 40ft, Active'). The app will instantly find those rows.")
+    user_query = st.text_input("Enter search keywords:")
     
-    if st.button("Generate Dynamic Table") and user_query:
-        with st.spinner("Gemini Core Engine is rendering your table..."):
+    if st.button("Extract Data Table") and user_query:
+        with st.spinner("Processing file locally (Instant)..."):
             file_response = requests.get(download_url)
             
             if file_response.status_code != 200:
-                st.error("Failed to download the data stream.")
+                st.error("Failed to download the document data stream.")
             else:
-                file_bytes = file_response.content
-                prompt = f"Analyze this content. Disregard layout discrepancies and map the following details into rows and columns: {user_query}"
+                # Clean up user keywords
+                keywords = [k.strip().lower() for k in user_query.split(",") if k.strip()]
                 
-                try:
-                    # Case A: Handling PDF layouts (ROUTED TO THE CORE 3.6 PIPELINE)
-                    if selected_file_name.endswith(".pdf"):
-                        res = client.models.generate_content(
-                            model='gemini-3.6-flash',
-                            contents=[
-                                types.Part.from_bytes(data=file_bytes, mime_type='application/pdf'),
-                                prompt
-                            ],
-                            config=types.GenerateContentConfig(
-                                response_mime_type="application/json",
-                                response_schema=TableStructure,
-                            ),
-                        )
-                    # Case B: Handling Spreadsheet layouts (ROUTED TO THE CORE 3.6 PIPELINE)
+                # Case A: Handling Excel Spreadsheet files natively
+                if selected_file_name.endswith(".xlsx"):
+                    df = pd.read_excel(io.BytesIO(file_response.content))
+                    
+                    if keywords:
+                        # Find rows that contain ANY of the typed keywords
+                        mask = df.astype(str).apply(lambda x: x.str.lower().str.contains('|'.join(keywords))).any(axis=1)
+                        df = df[mask]
+                        
+                    if not df.empty:
+                        st.dataframe(df, use_container_width=True)
+                        csv_data = df.to_csv(index=False).encode('utf-8')
+                        st.download_button("📥 Download Result as CSV", data=csv_data, file_name="extracted_excel.csv", mime="text/csv")
                     else:
-                        df = pd.read_excel(io.BytesIO(file_bytes))
-                        markdown_data = df.to_markdown(index=False)
-                        res = client.models.generate_content(
-                            model='gemini-3.6-flash',
-                            contents=f"Spreadsheet content:\n{markdown_data}\n\nTask: {prompt}",
-                            config=types.GenerateContentConfig(
-                                response_mime_type="application/json",
-                                response_schema=TableStructure,
-                            ),
-                        )
+                        st.warning("No rows matched your keywords in this spreadsheet.")
                     
-                    # Reassemble structural JSON directly into interactive UI Table
-                    data = json.loads(res.text)
-                    table_headers = data.get("headers", [])
-                    table_rows = [row["column_values"] for row in data.get("rows", [])]
+                # Case B: Handling PDF text files natively
+                elif selected_file_name.endswith(".pdf"):
+                    pdf_file = io.BytesIO(file_response.content)
+                    reader = pypdf.PdfReader(pdf_file)
                     
-                    output_df = pd.DataFrame(table_rows, columns=table_headers)
-                    st.dataframe(output_df, use_container_width=True)
+                    extracted_rows = []
+                    for page in reader.pages:
+                        text = page.extract_text()
+                        if text:
+                            for line in text.split("\n"):
+                                clean_line = line.strip()
+                                if not clean_line:
+                                    continue
+                                    
+                                # Check if line matches any keywords
+                                if keywords:
+                                    matches = any(kw in clean_line.lower() for kw in keywords)
+                                else:
+                                    matches = True
+                                    
+                                if matches:
+                                    # Split line by multiple spaces to try and form clean tabular chunks
+                                    parts = [p.strip() for p in clean_line.split("  ") if p.strip()]
+                                    if parts:
+                                        extracted_rows.append(parts)
                     
-                    # Add download button for users
-                    csv_data = output_df.to_csv(index=False).encode('utf-8')
-                    st.download_button("📥 Download Result as CSV", data=csv_data, file_name="extracted_table.csv", mime="text/csv")
-                    
-                except Exception as e:
-                    st.error(f"Error structuring dynamic output table: {e}")
+                    if extracted_rows:
+                        # Find the longest row to make columns align evenly
+                        max_cols = max(len(r) for r in extracted_rows)
+                        headers = [f"Column {i+1}" for i in range(max_cols)]
+                        
+                        # Pad shorter rows with empty spaces so table fits perfectly
+                        padded_rows = [r + [""] * (max_cols - len(r)) for r in extracted_rows]
+                        
+                        output_df = pd.DataFrame(padded_rows, columns=headers)
+                        st.dataframe(output_df, use_container_width=True)
+                        
+                        csv_data = output_df.to_csv(index=False).encode('utf-8')
+                        st.download_button("📥 Download Result as CSV", data=csv_data, file_name="extracted_pdf_table.csv", mime="text/csv")
+                    else:
+                        st.warning("No matching lines found inside this PDF document.")
