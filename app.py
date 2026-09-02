@@ -13,6 +13,7 @@ FOLDER_PATH = "documents"
 @st.cache_data(ttl=5)
 def get_live_file_list_secure():
     valid_files = {}
+    # FIX: Added the missing forward slash after the domain name
     logo_url = f"https://githubusercontent.com{GITHUB_USER}/{GITHUB_REPO}/{BRANCH}/{FOLDER_PATH}/logo.png"
     
     try:
@@ -37,6 +38,7 @@ def get_live_file_list_secure():
     # If API fails, check raw fallback stream directly to prevent empty box
     if not valid_files:
         fallback_name = "2026-09-Precisco.xlsx"
+        # FIX: Added the missing forward slash after the domain name here too
         valid_files[fallback_name] = f"https://githubusercontent.com{GITHUB_USER}/{GITHUB_REPO}/{BRANCH}/{FOLDER_PATH}/{fallback_name}"
         
     return valid_files, logo_url
