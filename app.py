@@ -28,7 +28,6 @@ class TableStructure(BaseModel):
 @st.cache_data(ttl=15)
 def get_live_file_list_secure():
     try:
-        # Connect natively using anonymous public repo tracking
         g = Github()
         repo = g.get_repo(f"{GITHUB_USER}/{GITHUB_REPO}")
         contents = repo.get_contents(FOLDER_PATH, ref=BRANCH)
@@ -52,14 +51,13 @@ available_files = get_live_file_list_secure()
 if not available_files:
     st.warning(f"No valid .pdf or .xlsx documents found inside your `documents` folder yet. Ensure your clerk has uploaded files to GitHub.")
 else:
-    # Dropdown loads automatically from your repo's 'documents' folder
     selected_file_name = st.selectbox("Choose a document to query:", list(available_files.keys()))
     download_url = available_files[selected_file_name]
     
     user_query = st.text_input(f"What data would you like to extract from '{selected_file_name}' into a table?")
     
     if st.button("Generate Dynamic Table") and user_query:
-        with st.spinner("Gemini AI is parsing your document formatting..."):
+        with st.spinner("Gemini Enterprise AI is rendering your table..."):
             file_response = requests.get(download_url)
             
             if file_response.status_code != 200:
@@ -69,10 +67,10 @@ else:
                 prompt = f"Analyze this content. Disregard layout discrepancies and map the following details into rows and columns: {user_query}"
                 
                 try:
-                    # Case A: Handling PDF layouts (UPDATED MODEL)
+                    # Case A: Handling PDF layouts (SWITCHED TO PRO MODEL FOR ACCURACY/SPEED)
                     if selected_file_name.endswith(".pdf"):
                         res = client.models.generate_content(
-                            model='gemini-3.6-flash',
+                            model='gemini-2.5-pro',
                             contents=[
                                 types.Part.from_bytes(data=file_bytes, mime_type='application/pdf'),
                                 prompt
@@ -82,12 +80,12 @@ else:
                                 response_schema=TableStructure,
                             ),
                         )
-                    # Case B: Handling Spreadsheet layouts (UPDATED MODEL)
+                    # Case B: Handling Spreadsheet layouts (SWITCHED TO PRO MODEL FOR ACCURACY/SPEED)
                     else:
                         df = pd.read_excel(io.BytesIO(file_bytes))
                         markdown_data = df.to_markdown(index=False)
                         res = client.models.generate_content(
-                            model='gemini-3.6-flash',
+                            model='gemini-2.5-pro',
                             contents=f"Spreadsheet content:\n{markdown_data}\n\nTask: {prompt}",
                             config=types.GenerateContentConfig(
                                 response_mime_type="application/json",
