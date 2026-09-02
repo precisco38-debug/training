@@ -22,7 +22,7 @@ def get_live_file_list_local():
 
 # 2. Page Configurations
 st.set_page_config(layout="centered", page_title="Precisco Query Portal")
-available_files = get_live_file_list_secure = get_live_file_list_local()
+available_files = get_live_file_list_local()
 
 # 3. SECURE GATEKEEPER LOGIN SCREEN
 if "authenticated" not in st.session_state:
@@ -61,7 +61,7 @@ else:
         selected_file_name = st.selectbox("Choose a freight liner database document:", available_files)
         target_file_path = os.path.join(LOCAL_FOLDER_PATH, selected_file_name)
         
-        st.info("💡 Instructions: Clear the box below to see ALL rows. Or search any keyword (e.g., 'Asia', 'Singapore', 'HPL') to filter your data table instantly.")
+        st.info("💡 Instructions: Clear the box below to see ALL rows. Or search any keyword (e.g., 'ANL', 'Ningbo', 'Yantian') to filter your data table instantly.")
         user_query = st.text_input("Enter search keywords:")
         
         if st.button("Extract Data Table"):
@@ -74,7 +74,6 @@ else:
                         
                         # Case A: Handle Excel Spreadsheet Files locally
                         if selected_file_name.endswith(".xlsx"):
-                            # Read everything as plain text strings from the very top row layer
                             raw_df = pd.read_excel(target_file_path, header=None, dtype=str)
                             
                             # DYNAMIC HEADER LAYER LOCATOR
@@ -85,28 +84,40 @@ else:
                                     header_row_index = idx
                                     break
                             
-                            # CRITICAL FIX FOR MERGED CELLS: Extract header row vector and un-merge columns
                             header_series = raw_df.iloc[header_row_index].copy()
-                            # Forward-fill replaces empty cell blanks with the true merged cell value (e.g., CARRIER)
                             header_series = header_series.ffill()
                             
-                            # Extract data payload starting right after the located header row index
                             data_df = raw_df.iloc[header_row_index + 1:].copy()
                             
-                            # Assign the repaired forward-filled series map as the true column names
-                            data_df.columns = [str(c).strip().upper() for c in header_series]
+                            # Convert header labels cleanly to uppercase text
+                            clean_headers = []
+                            for idx, val in enumerate(header_series):
+                                val_str = str(val).strip().upper()
+                                if val_str.startswith("UNNAMED") or val_str == "NAN" or not val_str:
+                                    if idx == 0:
+                                        clean_headers.append("CARRIER")
+                                    else:
+                                        clean_headers.append(f"COLUMN_{idx}")
+                                else:
+                                    clean_headers.append(val_str)
+                                    
+                            data_df.columns = clean_headers
                             
-                            # Re-verify the very first column explicitly to lock in CARRIER designation
-                            if len(data_df.columns) > 0 and (data_df.columns[0].startswith("UNNAMED") or data_df.columns[0] == "NAN"):
-                                col_list = list(data_df.columns)
-                                col_list[0] = "CARRIER"
-                                data_df.columns = col_list
-                            
-                            # Clean up unnamed helper artifacts and drop completely empty placeholder rows
+                            # FIX FOR CARRIER DATA: Force push index tracking back into visible columns
+                            data_df = data_df.reset_index(drop=True)
+                            if len(data_df.columns) > 0 and data_df.columns[0] != "CARRIER":
+                                data_df.rename(columns={data_df.columns[0]: "CARRIER"}, inplace=True)
+                                
                             data_df = data_df.dropna(how='all')
-                            df = data_df.loc[:, ~data_df.columns.str.contains('^UNNAMED:_[1-9]|^NAN|^NONE')]
+                            # Strip remaining temporary padding headers out of the display grid layout
+                            df = data_df.loc[:, ~data_df.columns.str.contains('^COLUMN_|^UNNAMED|^NAN|^NONE')]
                             
+                            # Clean string values uniformly to unlock global matching search filters
+                            for col in df.columns:
+                                df[col] = df[col].astype(str).str.strip()
+                                
                             if keywords:
+                                # Safe vector mapping verifies carrier rows matching your exact string searches (like ANL)
                                 mask = df.astype(str).apply(lambda x: x.str.lower().str.contains('|'.join(keywords))).any(axis=1)
                                 df = df[mask]
                             
@@ -116,7 +127,7 @@ else:
                                 
                             if not df.empty:
                                 st.metric("Total Quotes Found", len(df))
-                                st.dataframe(df, use_container_width=True, height=int(35 * len(df)) + 50 if len(df) < 50 else 600)
+                                st.dataframe(df, use_container_width=False) # Fixed width prevents text stretching
                             else:
                                 st.warning("No rows inside this liner file matched your keywords.")
                                 
