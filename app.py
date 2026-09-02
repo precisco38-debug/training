@@ -1,11 +1,11 @@
 import streamlit as st
-import requests
 import pandas as pd
 import io
 import json
+import requests
+from github import Github
 from google import genai
 from google.genai import types
-# FIX: Import BaseModel directly from pydantic instead of the genai module
 from pydantic import BaseModel
 
 # 1. Initialize Gemini Client
@@ -26,27 +26,31 @@ class TableStructure(BaseModel):
     rows: list[TableRow]
 
 @st.cache_data(ttl=15)
-def get_live_file_list():
-    api_url = f"https://github.com{GITHUB_USER}/{GITHUB_REPO}/contents/{FOLDER_PATH}?ref={BRANCH}"
-    response = requests.get(api_url)
-    if response.status_code != 200:
+def get_live_file_list_secure():
+    try:
+        # Connect natively using anonymous public repo tracking
+        g = Github()
+        repo = g.get_repo(f"{GITHUB_USER}/{GITHUB_REPO}")
+        contents = repo.get_contents(FOLDER_PATH, ref=BRANCH)
+        
+        valid_files = {}
+        for file_content in contents:
+            name = file_content.name
+            if name.endswith(".pdf") or name.endswith(".xlsx"):
+                valid_files[name] = file_content.download_url
+        return valid_files
+    except Exception as e:
+        st.error(f"GitHub safe bridge connection error: {e}")
         return {}
-    files_json = response.json()
-    valid_files = {}
-    for file in files_json:
-        name = file["name"]
-        if name.endswith(".pdf") or name.endswith(".xlsx"):
-            valid_files[name] = file["download_url"]
-    return valid_files
 
 # 3. Streamlit Interface Build
 st.set_page_config(layout="centered", page_title="Universal Query System")
 st.title("🔍 Multi-File Query System")
 
-available_files = get_live_file_list()
+available_files = get_live_file_list_secure()
 
 if not available_files:
-    st.warning(f"No valid .pdf or .xlsx documents found inside your `documents` folder yet. Ask your clerk to upload one.")
+    st.warning(f"No valid .pdf or .xlsx documents found inside your `documents` folder yet. Ensure your clerk has uploaded files to GitHub.")
 else:
     # Dropdown loads automatically from your repo's 'documents' folder
     selected_file_name = st.selectbox("Choose a document to query:", list(available_files.keys()))
@@ -59,7 +63,7 @@ else:
             file_response = requests.get(download_url)
             
             if file_response.status_code != 200:
-                st.error("Failed to read file from GitHub.")
+                st.error("Failed to download the data stream.")
             else:
                 file_bytes = file_response.content
                 prompt = f"Analyze this content. Disregard layout discrepancies and map the following details into rows and columns: {user_query}"
