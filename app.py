@@ -57,7 +57,7 @@ else:
     user_query = st.text_input(f"What data would you like to extract from '{selected_file_name}' into a table?")
     
     if st.button("Generate Dynamic Table") and user_query:
-        with st.spinner("Gemini High-Volume AI is rendering your table..."):
+        with st.spinner("Gemini Core Engine is rendering your table..."):
             file_response = requests.get(download_url)
             
             if file_response.status_code != 200:
@@ -67,10 +67,10 @@ else:
                 prompt = f"Analyze this content. Disregard layout discrepancies and map the following details into rows and columns: {user_query}"
                 
                 try:
-                    # Case A: Handling PDF layouts (SWITCHED TO HIGH-VOLUME FLASH ENGINE TO AVOID QUOTA LOCKS)
+                    # Case A: Handling PDF layouts (CORRECTED STABLE MODEL NAME)
                     if selected_file_name.endswith(".pdf"):
                         res = client.models.generate_content(
-                            model='gemini-2.5-flash-8b',
+                            model='gemini-2.5-flash',
                             contents=[
                                 types.Part.from_bytes(data=file_bytes, mime_type='application/pdf'),
                                 prompt
@@ -80,12 +80,12 @@ else:
                                 response_schema=TableStructure,
                             ),
                         )
-                    # Case B: Handling Spreadsheet layouts (SWITCHED TO HIGH-VOLUME FLASH ENGINE TO AVOID QUOTA LOCKS)
+                    # Case B: Handling Spreadsheet layouts (CORRECTED STABLE MODEL NAME)
                     else:
                         df = pd.read_excel(io.BytesIO(file_bytes))
                         markdown_data = df.to_markdown(index=False)
                         res = client.models.generate_content(
-                            model='gemini-2.5-flash-8b',
+                            model='gemini-2.5-flash',
                             contents=f"Spreadsheet content:\n{markdown_data}\n\nTask: {prompt}",
                             config=types.GenerateContentConfig(
                                 response_mime_type="application/json",
