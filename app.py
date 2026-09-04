@@ -19,6 +19,49 @@ def get_live_file_list_local():
         pass
     return sorted(valid_files)
 
+def extract_excel_data_and_notes(df):
+    """
+    Separates main tabular data from trailing quotation notes/footnotes in an Excel DataFrame.
+    Returns a tuple of (clean_df, list_of_notes).
+    """
+    if df.empty:
+        return df, []
+
+    note_indicators = (
+        "note", "notes", "term", "terms", "remark", "remarks", 
+        "nb:", "n.b.", "*", "disclaimer", "validity", "condition", 
+        "conditions", "subject to", "special note"
+    )
+    
+    data_indices = []
+    notes = []
+    in_notes_section = False
+
+    for idx, row in df.iterrows():
+        # Get non-empty cell values for the current row
+        row_values = [str(val).strip() for val in row if pd.notna(val) and str(val).strip() != ""]
+        if not row_values:
+            continue
+            
+        full_row_text = " ".join(row_values)
+        first_cell_lower = row_values[0].lower()
+        
+        # Check if current row starts a notes block or is a single-cell/trailing note row
+        is_note = (
+            in_notes_section or
+            any(first_cell_lower.startswith(prefix) for prefix in note_indicators) or
+            (len(row_values) == 1 and len(df.columns) > 2 and any(kw in full_row_text.lower() for kw in note_indicators))
+        )
+        
+        if is_note:
+            in_notes_section = True
+            notes.append(full_row_text)
+        else:
+            data_indices.append(idx)
+
+    clean_df = df.loc[data_indices].reset_index(drop=True) if data_indices else pd.DataFrame(columns=df.columns)
+    return clean_df, notes
+
 # 2. Page Configurations
 st.set_page_config(
     layout="centered", 
@@ -48,7 +91,7 @@ if not st.session_state["authenticated"]:
             
 else:
     # 4. LOGGED IN BRANDED DASHBOARD
-    col1, col2 = st.columns([1, 2]) # FIXED: Restored column structural layout weights
+    col1, col2 = st.columns([1, 2])
     with col1:
         if os.path.exists(logo_path):
             st.image(logo_path, use_container_width=True)
@@ -90,40 +133,20 @@ else:
                         sheet_names = xl.sheet_names
                         
                         for sheet in sheet_names:
-                            # 1. Read the raw sheet to check for trailing notes/metadata
-                            df_raw = pd.read_excel(target_file_path, sheet_name=sheet, header=None)
-                            df_raw = df_raw.fillna("")
+                            raw_df = pd.read_excel(target_file_path, sheet_name=sheet)
+                            raw_df = raw_df.fillna("")
                             
-                            trailing_notes = []
-                            cleaned_data_rows = len(df_raw)
-                            
-                            # Scan from the bottom up to isolate single-column trailing notes
-                            for idx in range(len(df_raw) - 1, -1, -1):
-                                row_cells = [str(val).strip() for val in df_raw.iloc[idx] if str(val).strip()]
-                                # If a row has only 1 non-empty cell near the bottom, it's likely a footer note
-                                if len(row_cells) == 1 and idx >= len(df_raw) * 0.7:
-                                    trailing_notes.insert(0, row_cells[0])
-                                    cleaned_data_rows = idx
-                                elif len(row_cells) > 1:
-                                    # We hit the structured table matrix, halt isolation
-                                    break
-                            
-                            # 2. Read the actual dataframe normally now
-                            df = pd.read_excel(target_file_path, sheet_name=sheet)
-                            # Truncate dataframe row boundaries if trailing notes were segmented
-                            if cleaned_data_rows < len(df_raw):
-                                df = df.iloc[:max(0, cleaned_data_rows - 1)]
-                            
-                            df = df.fillna("")
+                            # Separate table data from trailing quotation notes
+                            clean_df, sheet_notes = extract_excel_data_and_notes(raw_df)
                             
                             if keywords:
                                 pattern = '|'.join(keywords)
-                                mask = df.astype(str).apply(lambda x: x.str.lower().str.contains(pattern, na=False)).any(axis=1)
-                                df_filtered = df[mask]
+                                mask = clean_df.astype(str).apply(lambda x: x.str.lower().str.contains(pattern, na=False)).any(axis=1)
+                                df_filtered = clean_df[mask]
                             else:
-                                df_filtered = df
+                                df_filtered = clean_df
                                 
-                            if not df_filtered.empty:
+                            if not df_filtered.empty or (sheet_notes and not keywords):
                                 total_matches_found += len(df_filtered)
                                 
                                 st.markdown(f"### 📄 Source: `{current_file}`")
@@ -131,19 +154,21 @@ else:
                                 st.metric(f"Rows Found in '{sheet}'", len(df_filtered))
                                 st.dataframe(df_filtered, use_container_width=True, hide_index=True)
                                 
-                                # Display isolated trailing notes if detected underneath this table
-                                if trailing_notes:
-                                    st.info("**📝 Sheet Notes:**\n\n" + "\n".join([f"- {note}" for note in trailing_notes]))
+                                # Render extracted notes under the data table
+                                if sheet_notes:
+                                    st.markdown("##### 📌 **Quotation Notes & Terms:**")
+                                    for note in sheet_notes:
+                                        st.info(f"• {note}")
                                 
                                 st.write("---")
                                 
                                 compiled_download_text.append(f"## 📄 Source: {current_file}")
                                 compiled_download_text.append(f"### 📑 Sheet: {sheet}\n")
                                 compiled_download_text.append(df_filtered.to_markdown(index=False))
-                                
-                                if trailing_notes:
-                                    compiled_download_text.append(f"\n\n**Notes:**\n\n" + "\n".join([f"- {note}" for note in trailing_notes]))
-                                    
+                                if sheet_notes:
+                                    compiled_download_text.append("\n\n**📌 Notes & Terms:**\n")
+                                    for note in sheet_notes:
+                                        compiled_download_text.append(f"- {note}\n")
                                 compiled_download_text.append("\n\n---\n")
                                 
                     except Exception as sheet_ex:
@@ -166,9 +191,18 @@ else:
                             detected_headers = [p.strip() for p in all_lines[0].split("  ") if p.strip()]
                             
                             extracted_rows = []
+                            pdf_notes = []
+                            note_prefixes = ("note:", "notes:", "terms:", "remark:", "remarks:", "*", "nb:", "disclaimer:")
+                            
                             for line in all_lines[1:]:
+                                line_lower = line.lower()
+                                # Check if line is a footnote / quotation note
+                                if any(line_lower.startswith(prefix) for prefix in note_prefixes):
+                                    pdf_notes.append(line)
+                                    continue
+
                                 if keywords:
-                                    matches = any(kw in line.lower() for kw in keywords)
+                                    matches = any(kw in line_lower for kw in keywords)
                                 else:
                                     matches = True
                                 if matches:
@@ -176,10 +210,10 @@ else:
                                     if parts:
                                         extracted_rows.append(parts)
                             
-                            if extracted_rows:
+                            if extracted_rows or pdf_notes:
                                 total_matches_found += len(extracted_rows)
                                 
-                                max_cols = max(max(len(r) for r in extracted_rows), len(detected_headers))
+                                max_cols = max(max(len(r) for r in extracted_rows, default=1), len(detected_headers))
                                 final_headers = detected_headers + [f"Column {i+1}" for i in range(len(detected_headers), max_cols)]
                                 padded_rows = [r + [""] * (max_cols - len(r)) for r in extracted_rows]
                                 
@@ -187,6 +221,38 @@ else:
                                 
                                 st.markdown(f"### 📄 Source: `{current_file}`")
                                 st.metric("Lines Found in PDF", len(extracted_rows))
-                                st.dataframe(output_df, use_container_width=True, hide_index=True)
+                                if not output_df.empty:
+                                    st.dataframe(output_df, use_container_width=True, hide_index=True)
+                                
+                                # Render extracted PDF notes
+                                if pdf_notes:
+                                    st.markdown("##### 📌 **Quotation Notes & Terms:**")
+                                    for note in pdf_notes:
+                                        st.info(f"• {note}")
+
                                 st.write("---")
                                 
+                                compiled_download_text.append(f"## 📄 Source: {current_file}\n")
+                                compiled_download_text.append(output_df.to_markdown(index=False))
+                                if pdf_notes:
+                                    compiled_download_text.append("\n\n**📌 Notes & Terms:**\n")
+                                    for note in pdf_notes:
+                                        compiled_download_text.append(f"- {note}\n")
+                                compiled_download_text.append("\n\n---\n")
+                                
+                    except Exception as pdf_ex:
+                        st.warning(f"⚠️ Skipped processing PDF parsing error on `{current_file}`: {pdf_ex}")
+
+        # 5. DYNAMIC DOWNLOAD DRAWER EXPORT
+        if total_matches_found > 0:
+            st.success(f"📊 Matrix generation complete! Total matches across database ecosystem: {total_matches_found}")
+            final_download_payload = "\n".join(compiled_download_text)
+            st.download_button(
+                label="📥 Export Filtered Datasets (.md Archive)",
+                data=final_download_payload,
+                file_name="precisco_search_export.md",
+                mime="text/markdown",
+                use_container_width=True
+            )
+        else:
+            st.warning("🔍 No active match metrics detected inside data arrays. Try expanding keywords.")
