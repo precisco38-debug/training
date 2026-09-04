@@ -168,6 +168,9 @@ else:
 
                 # PROCESSING ENGINE B: PDF DOCUMENTS
                 elif current_file.endswith(".pdf"):
+                    output_df = None
+                    pdf_matched = False
+                    
                     try:
                         extracted_rows = []
                         with open(target_file_path, "rb") as f:
@@ -191,16 +194,16 @@ else:
                                                 extracted_rows.append(parts)
                         
                         if extracted_rows:
+                            pdf_matched = True
                             total_matches_found += len(extracted_rows)
                             max_cols = max(len(r) for r in extracted_rows)
                             headers = [f"Column {i+1}" for i in range(max_cols)]
                             padded_rows = [r + [""] * (max_cols - len(r)) for r in extracted_rows]
                             output_df = pd.DataFrame(padded_rows, columns=headers)
                             
-                            st.markdown(f"### 📄 Source: `{current_file}`")
-                            st.caption(f"🕒 **Last Updated:** {file_time} | **Type:** PDF Document")
-                            st.metric("Lines Found in PDF", len(extracted_rows))
-                            st.dataframe(output_df, use_container_width=True, hide_index=True)
-                            st.write("---")
-                            
-                            compiled_download_text.append(f"## 📄 Source: {current_file} (Modified: {file_time})\n")
+                    except Exception as pdf_ex:
+                        st.warning(f"⚠️ Skipped PDF text extraction fault on `{current_file}`: {pdf_ex}")
+                    
+                    # Interface rendering outside the core try block to protect indentation scopes
+                    if pdf_matched and output_df is not None:
+                        st.markdown(f"### 📄 Source: `{current_file}`")
