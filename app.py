@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import io
 import os
-import pdfplumber  # Clean table extraction library
+import pypdf
 
 # 1. Local Hard Drive Folder Path Configuration
 LOCAL_FOLDER_PATH = "documents"
@@ -113,7 +113,7 @@ else:
                                 st.dataframe(df_filtered, use_container_width=True, hide_index=False)
                                 st.write("---")
                                 
-                                # Convert to text representation for the unified download package
+                                # Convert to text representation for the unified download download package
                                 compiled_download_text.append(f"## 📄 Source: {current_file}")
                                 compiled_download_text.append(f"### 📑 Sheet: {sheet}\n")
                                 compiled_download_text.append(df_filtered.to_markdown(index=False))
@@ -125,63 +125,61 @@ else:
                 # PROCESSING ENGINE B: PDF DOCUMENTS
                 elif current_file.endswith(".pdf"):
                     try:
-                        all_pdf_dataframes = []
+                        extracted_rows = []
+                        with open(target_file_path, "rb") as f:
+                            reader = pypdf.PdfReader(f)
+                            for page in reader.pages:
+                                text = page.extract_text()
+                                if text:
+                                    for line in text.split("\n"):
+                                        clean_line = line.strip()
+                                        if not clean_line:
+                                            continue
+                                        if keywords:
+                                            matches = any(kw in clean_line.lower() for kw in keywords)
+                                        else:
+                                            matches = True
+                                        if matches:
+                                            parts = [p.strip() for p in clean_line.split("  ") if p.strip()]
+                                            if parts:
+                                                extracted_rows.append(parts)
                         
-                        with pdfplumber.open(target_file_path) as pdf:
-                            for page in pdf.pages:
-                                # 1. Try to extract visual tables natively first
-                                tables = page.extract_tables()
-                                
-                                for table in tables:
-                                    if not table or len(table) == 0:
-                                        continue
-                                    
-                                    # Create a baseline dataframe out of the extracted list matrix
-                                    df_page = pd.DataFrame(table)
-                                    
-                                    if not df_page.empty:
-                                        # Force safe sequential numbered columns using shape[1] (column count)
-                                        df_page.columns = [f"Column {i+1}" for i in range(df_page.shape[1])]
-                                        all_pdf_dataframes.append(df_page)
-                                
-                                # 2. Fallback: If no structural table layout detected, extract lines dynamically
-                                if not tables:
-                                    text = page.extract_text()
-                                    if text:
-                                        fallback_rows = []
-                                        for line in text.split("\n"):
-                                            if line.strip():
-                                                # Split by multiple spaces or tabs dynamically
-                                                parts = [p.strip() for p in line.split("   ") if p.strip()]
-                                                if not parts or len(parts) <= 1:
-                                                    parts = [p.strip() for p in line.split("  ") if p.strip()]
-                                                if parts:
-                                                    fallback_rows.append(parts)
-                                        if fallback_rows:
-                                            max_cols = max(len(r) for r in fallback_rows)
-                                            headers = [f"Column {i+1}" for i in range(max_cols)]
-                                            padded_rows = [r + [""] * (max_cols - len(r)) for r in fallback_rows]
-                                            all_pdf_dataframes.append(pd.DataFrame(padded_rows, columns=headers))
-                        
-                        # Apply unified keyword filtration process across compiled structures
-                        if all_pdf_dataframes:
-                            master_pdf_df = pd.concat(all_pdf_dataframes, ignore_index=True).astype(str)
+                        if extracted_rows:
+                            total_matches_found += len(extracted_rows)
                             
-                            if keywords:
-                                pattern = '|'.join(keywords)
-                                mask = master_pdf_df.apply(lambda x: x.str.lower().str.contains(pattern, na=False)).any(axis=1)
-                                df_pdf_filtered = master_pdf_df[mask]
-                            else:
-                                df_pdf_filtered = master_pdf_df
-                                
-                            if not df_pdf_filtered.empty:
-                                total_matches_found += len(df_pdf_filtered)
-                                
-                                # Render Headers Visually
-                                st.markdown(f"### 📄 Source: `{current_file}`")
-                                st.metric("Lines Found in PDF", len(df_pdf_filtered))
-                                st.dataframe(df_pdf_filtered, use_container_width=True, hide_index=True)
-                                st.write("---")
-                                
-                                # Convert to text representation for the unified download package
-                                compiled_download_text.append(f"## 📄 Source: {current_file}\n")
+                            # Standardize matrix grid formatting matching origin app logic
+                            max_cols = max(len(r) for r in extracted_rows)
+                            headers = [f"Column {i+1}" for i in range(max_cols)]
+                            padded_rows = [r + [""] * (max_cols - len(r)) for r in extracted_rows]
+                            output_df = pd.DataFrame(padded_rows, columns=headers)
+                            
+                            # Render Headers Visually
+                            st.markdown(f"### 📄 Source: `{current_file}`")
+                            st.metric("Lines Found in PDF", len(extracted_rows))
+                            st.dataframe(output_df, use_container_width=True, hide_index=True)
+                            st.write("---")
+                            
+                            # Convert to text representation for the unified download download package
+                            compiled_download_text.append(f"## 📄 Source: {current_file}\n")
+                            compiled_download_text.append(output_df.to_markdown(index=False))
+                            compiled_download_text.append("\n\n---\n")
+                            
+                    except Exception as pdf_ex:
+                        st.warning(f"⚠️ Skipped processing PDF text extraction fault on `{current_file}`: {pdf_ex}")
+
+        # 5. GLOBAL AGGREGATION & ACTION CONTROL BAR
+        if total_matches_found > 0:
+            st.success(f"🎉 Complete Global Search Finished! Discovered {total_matches_found} total entry alignments.")
+            
+            # Formulate full markdown text block ready for saving
+            final_download_payload = "\n".join(compiled_download_text)
+            
+            st.download_button(
+                label="📥 Download Search Results",
+                data=final_download_payload,
+                file_name="precisco_query_export.md",
+                mime="text/markdown",
+                use_container_width=True
+            )
+        else:
+            st.warning("No records matched your specific filter query across any local repository files.")
