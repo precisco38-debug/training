@@ -3,9 +3,6 @@ import pandas as pd
 import io
 import os
 import pypdf
-import datetime
-from email import message_from_file
-from bs4 import BeautifulSoup
 
 # 1. Local Hard Drive Folder Path Configuration
 LOCAL_FOLDER_PATH = "documents"
@@ -16,70 +13,25 @@ def get_live_file_list_local():
     try:
         if os.path.exists(LOCAL_FOLDER_PATH):
             for name in os.listdir(LOCAL_FOLDER_PATH):
-                # Extended support to catch Email files (.eml) alongside PDFs and Excels
-                if name.endswith(".pdf") or name.endswith(".xlsx") or name.endswith(".eml"):
+                if name.endswith(".pdf") or name.endswith(".xlsx"):
                     valid_files.append(name)
     except Exception:
         pass
     return sorted(valid_files)
 
-def get_file_timestamp(file_path):
-    """Retrieves localized last modification time for record validation."""
-    try:
-        timestamp = os.path.getmtime(file_path)
-        dt = datetime.datetime.fromtimestamp(timestamp)
-        return dt.strftime("%Y-%m-%d %H:%M")
-    except Exception:
-        return "Unknown Time"
-
-def evaluate_logic_query(text_to_check, raw_query_string):
-    """
-    Evaluates text targeting smart logic expressions (AND, OR, NOT, or commas).
-    Falls back to original standard matching if no special operators are present.
-    """
-    text_clean = text_to_check.lower()
-    q_upper = raw_query_string.strip().upper()
-    
-    # Context Processing: Handle advanced expressions safely
-    if " AND " in q_upper or " OR " in q_upper or " NOT " in q_upper:
-        # Standardize evaluation spaces using python boolean operators
-        eval_string = raw_query_string.lower()
-        # Protect logic structures from string mutations by evaluating isolated parts
-        import re
-        tokens = re.findall(r'\b\w+\b', eval_string)
-        # Unique filter words excluding operational syntax commands
-        keywords = [t for t in tokens if t not in ["and", "or", "not"]]
-        
-        for kw in keywords:
-            has_word = str(kw in text_clean).lower()
-            # Replace complete token word boundary to prevent breaking words containing 'and' / 'or'
-            eval_string = re.sub(rf'\b{kw}\b', has_word, eval_string)
-            
-        try:
-            # Safely evaluate calculated boolean string mapping
-            return eval(eval_string, {"__builtins__": None}, {})
-        except Exception:
-            return False
-            
-    else:
-        # Fallback Engine: Preserve your exact comma-separated text matching rule
-        keywords = [k.strip().lower() for k in raw_query_string.split(",") if k.strip()]
-        if not keywords:
-            return True
-        return any(kw in text_clean for kw in keywords)
-
-# 3. Page Configurations
+# 2. Page Configurations
 st.set_page_config(
     layout="centered", 
     page_title="Precisco Query Portal",
     initial_sidebar_state="collapsed"
 )
 
-# 4. SECURE GATEKEEPER LOGIN SCREEN
+# 3. SECURE GATEKEEPER LOGIN SCREEN
 if "authenticated" not in st.session_state:
     st.session_state["authenticated"] = False
 
 if not st.session_state["authenticated"]:
+    # Center container container for clean rendering across mobile screens
     with st.container():
         if os.path.exists(logo_path):
             st.image(logo_path, width=200)
@@ -96,8 +48,8 @@ if not st.session_state["authenticated"]:
                 st.error("Incorrect password credentials. Please try again.")
             
 else:
-    # 5. LOGGED IN BRANDED DASHBOARD
-    col1, col2 = st.columns(2)  # Fixed: Restored to original working layout dimension parameter
+    # 4. LOGGED IN BRANDED DASHBOARD
+    col1, col2 = st.columns([1, 2])
     with col1:
         if os.path.exists(logo_path):
             st.image(logo_path, use_container_width=True)
@@ -110,15 +62,18 @@ else:
     available_files = get_live_file_list_local()
 
     if not available_files:
-        st.error("⚠️ No files found! Please upload `.xlsx`, `.pdf`, or `.eml` files to the local `documents` folder.")
+        st.error("⚠️ No files found! Please ask the clerk to upload `.xlsx` or `.pdf` files to the local `documents` folder.")
     else:
-        st.info("💡 **Instructions:** Use logic statements like `ANL AND Yantian`, `ANL OR BENLINE`, or standard commas to search globally.")
-        user_query = st.text_input("Enter search query or keywords:", placeholder="e.g., Singapore AND ANL")
+        st.info("💡 Instructions: Clear the box below to see ALL rows across ALL files. Or search any keyword (e.g., 'ANL', 'BENLINE', 'Yantian') to filter your data networks instantly.")
+        user_query = st.text_input("Enter search keywords:", placeholder="e.g. ANL, Yantian")
         
-        # Build document export payload data structure
+        # Parse search keys using original working logic
+        keywords = [k.strip().lower() for k in user_query.split(",") if k.strip()]
+        
+        # Structures to keep track of compiled data for downloading
         compiled_download_text = []
-        compiled_download_text.append("# Precisco Advanced Search Export Summary\n")
-        compiled_download_text.append(f"**Query Logic Applied:** {user_query if user_query else 'ALL (No Filter)'}\n")
+        compiled_download_text.append("# Precisco Search Export Summary\n")
+        compiled_download_text.append(f"**Search Query Applied:** {user_query if user_query else 'ALL (No Filter)'}\n")
         compiled_download_text.append("---\n")
         
         total_matches_found = 0
@@ -126,7 +81,6 @@ else:
         with st.spinner("Processing global supply chain matrices..."):
             for current_file in available_files:
                 target_file_path = os.path.join(LOCAL_FOLDER_PATH, current_file)
-                file_time = get_file_timestamp(target_file_path)
                 
                 if not os.path.exists(target_file_path):
                     st.error(f"File {current_file} missing during live retrieval cycle.")
@@ -136,14 +90,15 @@ else:
                 if current_file.endswith(".xlsx"):
                     try:
                         xl = pd.ExcelFile(target_file_path, engine='openpyxl')
-                        for sheet in xl.sheet_names:
+                        sheet_names = xl.sheet_names
+                        
+                        for sheet in sheet_names:
+                            # Read file natively as is without structural mutations
                             df = pd.read_excel(target_file_path, sheet_name=sheet, dtype=str)
                             
-                            if user_query.strip():
-                                # Evaluate rows individually using dynamic logical operator sets
-                                mask = df.astype(str).apply(
-                                    lambda row: evaluate_logic_query(" ".join(row.values), user_query), axis=1
-                                )
+                            if keywords:
+                                pattern = '|'.join(keywords)
+                                mask = df.astype(str).apply(lambda x: x.str.lower().str.contains(pattern, na=False)).any(axis=1)
                                 df_filtered = df[mask]
                             else:
                                 df_filtered = df
@@ -151,26 +106,24 @@ else:
                             if not df_filtered.empty:
                                 total_matches_found += len(df_filtered)
                                 
+                                # Render Headers Visually
                                 st.markdown(f"### 📄 Source: `{current_file}`")
-                                st.caption(f"🕒 **Last Updated:** {file_time} | **Type:** Excel Spreadsheet")
-                                st.markdown(f"**📑 Sheet Name Target:** `{sheet}`")
+                                st.markdown(f"**📑 Sheet:** {sheet}")
                                 st.metric(f"Rows Found in '{sheet}'", len(df_filtered))
                                 st.dataframe(df_filtered, use_container_width=True, hide_index=False)
                                 st.write("---")
                                 
-                                compiled_download_text.append(f"## 📄 Source: {current_file} (Modified: {file_time})")
+                                # Convert to text representation for the unified download download package
+                                compiled_download_text.append(f"## 📄 Source: {current_file}")
                                 compiled_download_text.append(f"### 📑 Sheet: {sheet}\n")
                                 compiled_download_text.append(df_filtered.to_markdown(index=False))
                                 compiled_download_text.append("\n\n---\n")
                                 
                     except Exception as sheet_ex:
-                        st.warning(f"⚠️ Skipped Excel sheet parsing error on `{current_file}`: {sheet_ex}")
+                        st.warning(f"⚠️ Skipped processing Excel sheet parsing error on `{current_file}`: {sheet_ex}")
 
                 # PROCESSING ENGINE B: PDF DOCUMENTS
                 elif current_file.endswith(".pdf"):
-                    output_df = None
-                    pdf_matched = False
-                    
                     try:
                         extracted_rows = []
                         with open(target_file_path, "rb") as f:
@@ -182,27 +135,51 @@ else:
                                         clean_line = line.strip()
                                         if not clean_line:
                                             continue
-                                        
-                                        if user_query.strip():
-                                            matches = evaluate_logic_query(clean_line, user_query)
+                                        if keywords:
+                                            matches = any(kw in clean_line.lower() for kw in keywords)
                                         else:
                                             matches = True
-                                            
                                         if matches:
                                             parts = [p.strip() for p in clean_line.split("  ") if p.strip()]
                                             if parts:
                                                 extracted_rows.append(parts)
                         
                         if extracted_rows:
-                            pdf_matched = True
                             total_matches_found += len(extracted_rows)
+                            
+                            # Standardize matrix grid formatting matching origin app logic
                             max_cols = max(len(r) for r in extracted_rows)
                             headers = [f"Column {i+1}" for i in range(max_cols)]
                             padded_rows = [r + [""] * (max_cols - len(r)) for r in extracted_rows]
                             output_df = pd.DataFrame(padded_rows, columns=headers)
                             
+                            # Render Headers Visually
+                            st.markdown(f"### 📄 Source: `{current_file}`")
+                            st.metric("Lines Found in PDF", len(extracted_rows))
+                            st.dataframe(output_df, use_container_width=True, hide_index=True)
+                            st.write("---")
+                            
+                            # Convert to text representation for the unified download download package
+                            compiled_download_text.append(f"## 📄 Source: {current_file}\n")
+                            compiled_download_text.append(output_df.to_markdown(index=False))
+                            compiled_download_text.append("\n\n---\n")
+                            
                     except Exception as pdf_ex:
-                        st.warning(f"⚠️ Skipped PDF text extraction fault on `{current_file}`: {pdf_ex}")
-                    
-                    # Interface rendering outside the core try block to protect indentation scopes
-                    if pdf_matched and output_df is not None:
+                        st.warning(f"⚠️ Skipped processing PDF text extraction fault on `{current_file}`: {pdf_ex}")
+
+        # 5. GLOBAL AGGREGATION & ACTION CONTROL BAR
+        if total_matches_found > 0:
+            st.success(f"🎉 Complete Global Search Finished! Discovered {total_matches_found} total entry alignments.")
+            
+            # Formulate full markdown text block ready for saving
+            final_download_payload = "\n".join(compiled_download_text)
+            
+            st.download_button(
+                label="📥 Download Search Results",
+                data=final_download_payload,
+                file_name="precisco_query_export.md",
+                mime="text/markdown",
+                use_container_width=True
+            )
+        else:
+            st.warning("No records matched your specific filter query across any local repository files.")
