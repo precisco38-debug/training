@@ -3,8 +3,6 @@ import pandas as pd
 import io
 import os
 import pypdf
-import email
-from email import policy
 
 # 1. Local Hard Drive Folder Path Configuration
 LOCAL_FOLDER_PATH = "documents"
@@ -15,7 +13,7 @@ def get_live_file_list_local():
     try:
         if os.path.exists(LOCAL_FOLDER_PATH):
             for name in os.listdir(LOCAL_FOLDER_PATH):
-                if name.endswith(".pdf") or name.endswith(".xlsx") or name.endswith(".eml"):
+                if name.endswith(".pdf") or name.endswith(".xlsx"):
                     valid_files.append(name)
     except Exception:
         pass
@@ -64,7 +62,7 @@ else:
     available_files = get_live_file_list_local()
 
     if not available_files:
-        st.error("⚠️ No files found! Please ask the clerk to upload `.xlsx`, `.pdf`, or `.eml` files to the local `documents` folder.")
+        st.error("⚠️ No files found! Please ask the clerk to upload `.xlsx` or `.pdf` files to the local `documents` folder.")
     else:
         st.info("💡 Instructions: Clear the box below to see ALL rows across ALL files. Or search any keyword (e.g., 'ANL', 'BENLINE', 'Yantian') to filter your data networks instantly.")
         user_query = st.text_input("Enter search keywords:", placeholder="e.g. ANL, Yantian")
@@ -169,30 +167,19 @@ else:
                     except Exception as pdf_ex:
                         st.warning(f"⚠️ Skipped processing PDF text extraction fault on `{current_file}`: {pdf_ex}")
 
-                # PROCESSING ENGINE C: EML DOCUMENTS (EMAILS)
-                elif current_file.endswith(".eml"):
-                    try:
-                        with open(target_file_path, "rb") as f:
-                            msg = email.message_from_binary_file(f, policy=policy.default)
-                        
-                        subject = msg.get('subject', '(No Subject)')
-                        from_ptr = msg.get('from', '(No Sender)')
-                        to_ptr = msg.get('to', '(No Recipient)')
-                        date_ptr = msg.get('date', '(No Date)')
-                        
-                        body_text = ""
-                        body_part = msg.get_body(preferencelist=('plain', 'html'))
-                        if body_part:
-                            body_text = body_part.get_content()
-                        
-                        combined_email_content = f"{subject} {from_ptr} {to_ptr} {date_ptr} {body_text}".lower()
-                        
-                        if keywords:
-                            matches = any(kw in combined_email_content for kw in keywords)
-                        else:
-                            matches = True
-                            
-                        if matches:
-                            total_matches_found += 1
-                            
-                            eml_data = {
+        # 5. GLOBAL AGGREGATION & ACTION CONTROL BAR
+        if total_matches_found > 0:
+            st.success(f"🎉 Complete Global Search Finished! Discovered {total_matches_found} total entry alignments.")
+            
+            # Formulate full markdown text block ready for saving
+            final_download_payload = "\n".join(compiled_download_text)
+            
+            st.download_button(
+                label="📥 Download Search Results",
+                data=final_download_payload,
+                file_name="precisco_query_export.md",
+                mime="text/markdown",
+                use_container_width=True
+            )
+        else:
+            st.warning("No records matched your specific filter query across any local repository files.")
