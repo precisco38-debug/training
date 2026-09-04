@@ -49,7 +49,7 @@ if not st.session_state["authenticated"]:
             
 else:
     # 4. LOGGED IN BRANDED DASHBOARD
-    col1, col2 = st.columns([1, 2])
+    col1, col2 = st.columns()
     with col1:
         if os.path.exists(logo_path):
             st.image(logo_path, use_container_width=True)
@@ -122,7 +122,7 @@ else:
                     except Exception as sheet_ex:
                         st.warning(f"⚠️ Skipped processing Excel sheet parsing error on `{current_file}`: {sheet_ex}")
 
-                # PROCESSING ENGINE B: PDF DOCUMENTS (WITH TEXT-LAYOUT STRATEGY FALLBACK)
+                # PROCESSING ENGINE B: PDF DOCUMENTS (FIXED SYNTAX & INDENTATION)
                 elif current_file.endswith(".pdf"):
                     try:
                         with pdfplumber.open(target_file_path) as pdf:
@@ -132,7 +132,6 @@ else:
                                 
                                 # 2. If no tables or empty data found, switch to Text Layout Analysis (Borderless fallback)
                                 if not tables or len(tables) == 0 or (len(tables) == 1 and not tables[0]):
-                                    # Fallback: Capture text using layout=True to preserve column spatial alignments
                                     text_layout = page.extract_text(layout=True)
                                     if text_layout:
                                         text_rows = []
@@ -140,17 +139,12 @@ else:
                                             clean_line = line.strip()
                                             if not clean_line:
                                                 continue
-                                            # Split by two or more spaces to preserve structured fields
                                             parts = [p.strip() for p in clean_line.split("  ") if p.strip()]
                                             if parts:
                                                 text_rows.append(parts)
                                         
                                         if text_rows:
-                                            # Use the first row found as headers
-                                            raw_headers = text_rows[0]
-                                            headers = [str(h).strip() if h else f"Column {i+1}" for i, h in enumerate(raw_headers)]
-                                            data_rows = text_rows[1:] if len(text_rows) > 1 else text_rows
-                                            tables = [[headers] + data_rows]
+                                            tables = [text_rows]
                                 
                                 # Process discovered data matrices
                                 if tables:
@@ -158,12 +152,12 @@ else:
                                         if not table or len(table) < 1:
                                             continue
                                         
-                                        # Formulate Header Index
+                                        # Establish Header Configuration
                                         raw_headers = table[0]
                                         headers = [str(h).strip() if h else f"Column {i+1}" for i, h in enumerate(raw_headers)]
                                         
                                         # Build clean DataFrames
-                                        data_rows = table[1:]
+                                        data_rows = table[1:] if len(table) > 1 else table
                                         df = pd.DataFrame(data_rows)
                                         
                                         if df.empty:
@@ -182,3 +176,12 @@ else:
                                         # Apply Keyword Search Filter
                                         if keywords:
                                             pattern = '|'.join(keywords)
+                                            mask = df.astype(str).apply(lambda x: x.str.lower().str.contains(pattern, na=False)).any(axis=1)
+                                            df_filtered = df[mask]
+                                        else:
+                                            df_filtered = df
+                                            
+                                        if not df_filtered.empty:
+                                            total_matches_found += len(df_filtered)
+                                            
+                                            # Render Headers Visually
