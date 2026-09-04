@@ -97,7 +97,7 @@ if not st.session_state["authenticated"]:
             
 else:
     # 5. LOGGED IN BRANDED DASHBOARD
-    col1, col2 = st.columns()
+    col1, col2 = st.columns(2)  # Fixed: Restored to original working layout dimension parameter
     with col1:
         if os.path.exists(logo_path):
             st.image(logo_path, use_container_width=True)
@@ -206,4 +206,3 @@ else:
                     
                     # Interface rendering outside the core try block to protect indentation scopes
                     if pdf_matched and output_df is not None:
-                        st.markdown(f"### 📄 Source: `{current_file}`")
