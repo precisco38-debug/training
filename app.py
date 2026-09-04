@@ -31,6 +31,7 @@ if "authenticated" not in st.session_state:
     st.session_state["authenticated"] = False
 
 if not st.session_state["authenticated"]:
+    # Center container container for clean rendering across mobile screens
     with st.container():
         if os.path.exists(logo_path):
             st.image(logo_path, width=200)
@@ -66,8 +67,10 @@ else:
         st.info("💡 Instructions: Clear the box below to see ALL rows across ALL files. Or search any keyword (e.g., 'ANL', 'BENLINE', 'Yantian') to filter your data networks instantly.")
         user_query = st.text_input("Enter search keywords:", placeholder="e.g. ANL, Yantian")
         
+        # Parse search keys using original working logic
         keywords = [k.strip().lower() for k in user_query.split(",") if k.strip()]
         
+        # Structures to keep track of compiled data for downloading
         compiled_download_text = []
         compiled_download_text.append("# Precisco Search Export Summary\n")
         compiled_download_text.append(f"**Search Query Applied:** {user_query if user_query else 'ALL (No Filter)'}\n")
@@ -90,6 +93,7 @@ else:
                         sheet_names = xl.sheet_names
                         
                         for sheet in sheet_names:
+                            # Read file natively as is without structural mutations
                             df = pd.read_excel(target_file_path, sheet_name=sheet, dtype=str)
                             
                             if keywords:
@@ -102,12 +106,14 @@ else:
                             if not df_filtered.empty:
                                 total_matches_found += len(df_filtered)
                                 
+                                # Render Headers Visually
                                 st.markdown(f"### 📄 Source: `{current_file}`")
                                 st.markdown(f"**📑 Sheet:** {sheet}")
                                 st.metric(f"Rows Found in '{sheet}'", len(df_filtered))
                                 st.dataframe(df_filtered, use_container_width=True, hide_index=False)
                                 st.write("---")
                                 
+                                # Convert to text representation for the unified download download package
                                 compiled_download_text.append(f"## 📄 Source: {current_file}")
                                 compiled_download_text.append(f"### 📑 Sheet: {sheet}\n")
                                 compiled_download_text.append(df_filtered.to_markdown(index=False))
@@ -116,30 +122,29 @@ else:
                     except Exception as sheet_ex:
                         st.warning(f"⚠️ Skipped processing Excel sheet parsing error on `{current_file}`: {sheet_ex}")
 
-                # PROCESSING ENGINE B: PDF DOCUMENTS (FIXED TO PARSE TABLES)
+                # PROCESSING ENGINE B: PDF DOCUMENTS (FIXED DUPLICATE HEADERS & GRID SEPARATION)
                 elif current_file.endswith(".pdf"):
                     try:
                         all_pdf_dataframes = []
                         
                         with pdfplumber.open(target_file_path) as pdf:
-                            for page_num, page in enumerate(pdf.pages, start=1):
+                            for page in pdf.pages:
                                 # 1. Try to extract visual tables natively first
                                 tables = page.extract_tables()
                                 
                                 for table in tables:
-                                    if not table:
+                                    if not table or len(table) == 0:
                                         continue
                                     
-                                    # Formulate a baseline dataframe out of the extracted list matrix
+                                    # Create a baseline dataframe out of the extracted list matrix
                                     df_page = pd.DataFrame(table)
                                     
-                                    # Set the first row as headers if available
                                     if not df_page.empty:
-                                        df_page.columns = [f"Col {i+1}" if val is None or str(val).strip() == "" else str(val).strip() for i, val in enumerate(df_page.iloc[0])]
-                                        df_page = df_page.drop(df_page.index[0]).reset_index(drop=True)
+                                        # Force generic columns to safeguard against duplicate indexing breaks
+                                        df_page.columns = [f"Column {i+1}" for i in range(df_page.shape[1])]
                                         all_pdf_dataframes.append(df_page)
                                 
-                                # 2. Fallback: If no geometric tables detected, extract text lines smarter
+                                # 2. Fallback: If no structural layout detected, extract lines dynamically
                                 if not tables:
                                     text = page.extract_text()
                                     if text:
@@ -158,7 +163,7 @@ else:
                                             padded_rows = [r + [""] * (max_cols - len(r)) for r in fallback_rows]
                                             all_pdf_dataframes.append(pd.DataFrame(padded_rows, columns=headers))
                         
-                        # Apply unified keyword filtration process across parsed tables
+                        # Apply unified keyword filtration process across compiled structures
                         if all_pdf_dataframes:
                             master_pdf_df = pd.concat(all_pdf_dataframes, ignore_index=True).astype(str)
                             
@@ -172,16 +177,11 @@ else:
                             if not df_pdf_filtered.empty:
                                 total_matches_found += len(df_pdf_filtered)
                                 
-                                # Render visual dataframe layout with headers intact
+                                # Render Headers Visually
                                 st.markdown(f"### 📄 Source: `{current_file}`")
                                 st.metric("Lines Found in PDF", len(df_pdf_filtered))
                                 st.dataframe(df_pdf_filtered, use_container_width=True, hide_index=True)
                                 st.write("---")
                                 
+                                # Convert to text representation for the unified download download package
                                 compiled_download_text.append(f"## 📄 Source: {current_file}\n")
-                                compiled_download_text.append(df_pdf_filtered.to_markdown(index=False))
-                                compiled_download_text.append("\n\n---\n")
-                                
-                    except Exception as pdf_ex:
-                        st.warning(f"⚠️ Skipped processing PDF text extraction fault on `{current_file}`: {pdf_ex}")
-
