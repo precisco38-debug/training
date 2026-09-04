@@ -90,9 +90,12 @@ else:
                         sheet_names = xl.sheet_names
                         
                         for sheet in sheet_names:
-                            df = pd.read_excel(target_file_path, sheet_name=sheet, dtype=str)
+                            # Read natively to preserve raw types, then fill blanks cleanly
+                            df = pd.read_excel(target_file_path, sheet_name=sheet)
+                            df = df.fillna("") # Clear out NaN values which disrupt text searching
                             
                             if keywords:
+                                # Safe element-by-element string conversion to protect lookups against floats/ints
                                 pattern = '|'.join(keywords)
                                 mask = df.astype(str).apply(lambda x: x.str.lower().str.contains(pattern, na=False)).any(axis=1)
                                 df_filtered = df[mask]
@@ -130,11 +133,9 @@ else:
                                             all_lines.append(line.strip())
                         
                         if all_lines:
-                            # Use the very first line of the document as the Column Header row
                             detected_headers = [p.strip() for p in all_lines[0].split("  ") if p.strip()]
                             
                             extracted_rows = []
-                            # Process data starting from the second line so headers aren't dropped by filters
                             for line in all_lines[1:]:
                                 if keywords:
                                     matches = any(kw in line.lower() for kw in keywords)
@@ -148,10 +149,7 @@ else:
                             if extracted_rows:
                                 total_matches_found += len(extracted_rows)
                                 
-                                # Dynamic padding structure to balance unequal column layouts
                                 max_cols = max(max(len(r) for r in extracted_rows), len(detected_headers))
-                                
-                                # Fill missing header spots if row splits exceed header count
                                 final_headers = detected_headers + [f"Column {i+1}" for i in range(len(detected_headers), max_cols)]
                                 padded_rows = [r + [""] * (max_cols - len(r)) for r in extracted_rows]
                                 
