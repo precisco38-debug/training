@@ -113,7 +113,7 @@ else:
                                 st.dataframe(df_filtered, use_container_width=True, hide_index=False)
                                 st.write("---")
                                 
-                                # Convert to text representation for the unified download download package
+                                # Convert to text representation for the unified download package
                                 compiled_download_text.append(f"## 📄 Source: {current_file}")
                                 compiled_download_text.append(f"### 📑 Sheet: {sheet}\n")
                                 compiled_download_text.append(df_filtered.to_markdown(index=False))
@@ -122,7 +122,7 @@ else:
                     except Exception as sheet_ex:
                         st.warning(f"⚠️ Skipped processing Excel sheet parsing error on `{current_file}`: {sheet_ex}")
 
-                # PROCESSING ENGINE B: PDF DOCUMENTS (FIXED DUPLICATE HEADERS & GRID SEPARATION)
+                # PROCESSING ENGINE B: PDF DOCUMENTS
                 elif current_file.endswith(".pdf"):
                     try:
                         all_pdf_dataframes = []
@@ -140,11 +140,11 @@ else:
                                     df_page = pd.DataFrame(table)
                                     
                                     if not df_page.empty:
-                                        # Force generic columns to safeguard against duplicate indexing breaks
+                                        # Force safe sequential numbered columns using shape[1] (column count)
                                         df_page.columns = [f"Column {i+1}" for i in range(df_page.shape[1])]
                                         all_pdf_dataframes.append(df_page)
                                 
-                                # 2. Fallback: If no structural layout detected, extract lines dynamically
+                                # 2. Fallback: If no structural table layout detected, extract lines dynamically
                                 if not tables:
                                     text = page.extract_text()
                                     if text:
@@ -183,5 +183,5 @@ else:
                                 st.dataframe(df_pdf_filtered, use_container_width=True, hide_index=True)
                                 st.write("---")
                                 
-                                # Convert to text representation for the unified download download package
+                                # Convert to text representation for the unified download package
                                 compiled_download_text.append(f"## 📄 Source: {current_file}\n")
