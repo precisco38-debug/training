@@ -100,7 +100,7 @@ else:
                             # Scan from the bottom up to isolate single-column trailing notes
                             for idx in range(len(df_raw) - 1, -1, -1):
                                 row_cells = [str(val).strip() for val in df_raw.iloc[idx] if str(val).strip()]
-                                # If a row has only 1 non-empty cell near the bottom, it's likely a note
+                                # If a row has only 1 non-empty cell near the bottom, it's likely a footer note
                                 if len(row_cells) == 1 and idx >= len(df_raw) * 0.7:
                                     trailing_notes.insert(0, row_cells[0])
                                     cleaned_data_rows = idx
