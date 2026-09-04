@@ -48,7 +48,7 @@ if not st.session_state["authenticated"]:
             
 else:
     # 4. LOGGED IN BRANDED DASHBOARD
-    col1, col2 = st.columns()
+    col1, col2 = st.columns([1, 2]) # FIXED: Restored column structural layout weights
     with col1:
         if os.path.exists(logo_path):
             st.image(logo_path, use_container_width=True)
@@ -90,7 +90,6 @@ else:
                         sheet_names = xl.sheet_names
                         
                         for sheet in sheet_names:
-                            # Reads file with native headers intact from your workbook layout
                             df = pd.read_excel(target_file_path, sheet_name=sheet)
                             df = df.fillna("")
                             
@@ -107,7 +106,6 @@ else:
                                 st.markdown(f"### 📄 Source: `{current_file}`")
                                 st.markdown(f"**📑 Sheet:** {sheet}")
                                 st.metric(f"Rows Found in '{sheet}'", len(df_filtered))
-                                # hide_index=True drops row numbers but leaves actual column headings
                                 st.dataframe(df_filtered, use_container_width=True, hide_index=True)
                                 st.write("---")
                                 
@@ -133,7 +131,6 @@ else:
                                             all_lines.append(line.strip())
                         
                         if all_lines:
-                            # PDF only logic: grab line 1 for structural headers
                             detected_headers = [p.strip() for p in all_lines[0].split("  ") if p.strip()]
                             
                             extracted_rows = []
