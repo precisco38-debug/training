@@ -2,5 +2,4 @@ streamlit
 pandas
 openpyxl
 pypdf
-tabulate
-beautifulsoup4
+pdfplumber
