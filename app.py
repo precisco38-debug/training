@@ -213,7 +213,7 @@ else:
                             if extracted_rows or pdf_notes:
                                 total_matches_found += len(extracted_rows)
                                 
-                                max_cols = max(max(len(r) for r in extracted_rows, default=1), len(detected_headers))
+                                max_cols = max(max((len(r) for r in extracted_rows), default=1), len(detected_headers))
                                 final_headers = detected_headers + [f"Column {i+1}" for i in range(len(detected_headers), max_cols)]
                                 padded_rows = [r + [""] * (max_cols - len(r)) for r in extracted_rows]
                                 
