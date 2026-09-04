@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import io
 import os
-import pdfplumber  # Upgraded from pypdf to handle structured tables and headers
+import pdfplumber  # Upgraded from pypdf to handle structured tables and borderless layouts
 
 # 1. Local Hard Drive Folder Path Configuration
 LOCAL_FOLDER_PATH = "documents"
@@ -122,66 +122,63 @@ else:
                     except Exception as sheet_ex:
                         st.warning(f"⚠️ Skipped processing Excel sheet parsing error on `{current_file}`: {sheet_ex}")
 
-                # PROCESSING ENGINE B: PDF DOCUMENTS (UPDATED WITH PDFPLUMBER)
+                # PROCESSING ENGINE B: PDF DOCUMENTS (WITH TEXT-LAYOUT STRATEGY FALLBACK)
                 elif current_file.endswith(".pdf"):
                     try:
                         with pdfplumber.open(target_file_path) as pdf:
                             for page_num, page in enumerate(pdf.pages, start=1):
-                                # Extract tables layout directly from the visual PDF grid
+                                # 1. Try extracting explicit tables first (Bordered/Grid layout)
                                 tables = page.extract_tables()
                                 
-                                for table_idx, table in enumerate(tables):
-                                    if not table or len(table) < 1:
-                                        continue
-                                    
-                                    # Establish the top row as the column header layout
-                                    raw_headers = table[0]
-                                    headers = [h if h else f"Column {i+1}" for i, h in enumerate(raw_headers)]
-                                    
-                                    # Package the rest of the contents as database rows
-                                    data_rows = table[1:]
-                                    df = pd.DataFrame(data_rows, columns=headers)
-                                    df = df.fillna("")  # Gracefully catch empty cells
-                                    
-                                    if keywords:
-                                        pattern = '|'.join(keywords)
-                                        mask = df.astype(str).apply(lambda x: x.str.lower().str.contains(pattern, na=False)).any(axis=1)
-                                        df_filtered = df[mask]
-                                    else:
-                                        df_filtered = df
+                                # 2. If no tables or empty data found, switch to Text Layout Analysis (Borderless fallback)
+                                if not tables or len(tables) == 0 or (len(tables) == 1 and not tables[0]):
+                                    # Fallback: Capture text using layout=True to preserve column spatial alignments
+                                    text_layout = page.extract_text(layout=True)
+                                    if text_layout:
+                                        text_rows = []
+                                        for line in text_layout.split("\n"):
+                                            clean_line = line.strip()
+                                            if not clean_line:
+                                                continue
+                                            # Split by two or more spaces to preserve structured fields
+                                            parts = [p.strip() for p in clean_line.split("  ") if p.strip()]
+                                            if parts:
+                                                text_rows.append(parts)
                                         
-                                    if not df_filtered.empty:
-                                        total_matches_found += len(df_filtered)
+                                        if text_rows:
+                                            # Use the first row found as headers
+                                            raw_headers = text_rows[0]
+                                            headers = [str(h).strip() if h else f"Column {i+1}" for i, h in enumerate(raw_headers)]
+                                            data_rows = text_rows[1:] if len(text_rows) > 1 else text_rows
+                                            tables = [[headers] + data_rows]
+                                
+                                # Process discovered data matrices
+                                if tables:
+                                    for table_idx, table in enumerate(tables):
+                                        if not table or len(table) < 1:
+                                            continue
                                         
-                                        # Render Headers Visually
-                                        st.markdown(f"### 📄 Source: `{current_file}`")
-                                        st.markdown(f"**📑 Table {table_idx+1} (Page {page_num})**")
-                                        st.metric("Rows Found in Table", len(df_filtered))
-                                        st.dataframe(df_filtered, use_container_width=True, hide_index=True)
-                                        st.write("---")
+                                        # Formulate Header Index
+                                        raw_headers = table[0]
+                                        headers = [str(h).strip() if h else f"Column {i+1}" for i, h in enumerate(raw_headers)]
                                         
-                                        # Convert to text representation for the unified download download package
-                                        compiled_download_text.append(f"## 📄 Source: {current_file}\n")
-                                        compiled_download_text.append(f"### 📑 Table {table_idx+1} (Page {page_num})\n")
-                                        compiled_download_text.append(df_filtered.to_markdown(index=False))
-                                        compiled_download_text.append("\n\n---\n")
+                                        # Build clean DataFrames
+                                        data_rows = table[1:]
+                                        df = pd.DataFrame(data_rows)
                                         
-                    except Exception as pdf_ex:
-                        st.warning(f"⚠️ Skipped processing PDF table extraction fault on `{current_file}`: {pdf_ex}")
-
-        # 5. GLOBAL AGGREGATION & ACTION CONTROL BAR
-        if total_matches_found > 0:
-            st.success(f"🎉 Complete Global Search Finished! Discovered {total_matches_found} total entry alignments.")
-            
-            # Formulate full markdown text block ready for saving
-            final_download_payload = "\n".join(compiled_download_text)
-            
-            st.download_button(
-                label="📥 Download Search Results",
-                data=final_download_payload,
-                file_name="precisco_query_export.md",
-                mime="text/markdown",
-                use_container_width=True
-            )
-        else:
-            st.warning("No records matched your specific filter query across any local repository files.")
+                                        if df.empty:
+                                            continue
+                                            
+                                        # Conform dataframe shape to header length dynamically
+                                        if len(df.columns) < len(headers):
+                                            headers = headers[:len(df.columns)]
+                                        elif len(df.columns) > len(headers):
+                                            for i in range(len(headers), len(df.columns)):
+                                                headers.append(f"Column {i+1}")
+                                                
+                                        df.columns = headers
+                                        df = df.fillna("")
+                                        
+                                        # Apply Keyword Search Filter
+                                        if keywords:
+                                            pattern = '|'.join(keywords)
