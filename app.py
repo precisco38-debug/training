@@ -3,8 +3,6 @@ import pandas as pd
 import io
 import os
 import pypdf
-import email
-from email import policy
 
 # 1. Local Hard Drive Folder Path Configuration
 LOCAL_FOLDER_PATH = "documents"
@@ -15,7 +13,7 @@ def get_live_file_list_local():
     try:
         if os.path.exists(LOCAL_FOLDER_PATH):
             for name in os.listdir(LOCAL_FOLDER_PATH):
-                if name.endswith(".pdf") or name.endswith(".xlsx") or name.endswith(".eml"):
+                if name.endswith(".pdf") or name.endswith(".xlsx"):
                     valid_files.append(name)
     except Exception:
         pass
@@ -50,7 +48,7 @@ if not st.session_state["authenticated"]:
             
 else:
     # 4. LOGGED IN BRANDED DASHBOARD
-    col1, col2 = st.columns([1, 2])
+    col1, col2 = st.columns()
     with col1:
         if os.path.exists(logo_path):
             st.image(logo_path, use_container_width=True)
@@ -63,13 +61,15 @@ else:
     available_files = get_live_file_list_local()
 
     if not available_files:
-        st.error("⚠️ No files found! Please ask the clerk to upload `.xlsx`, `.pdf`, or `.eml` files to the local `documents` folder.")
+        st.error("⚠️ No files found! Please ask the clerk to upload `.xlsx` or `.pdf` files to the local `documents` folder.")
     else:
         st.info("💡 Instructions: Clear the box below to see ALL rows across ALL files. Or search any keyword (e.g., 'ANL', 'BENLINE', 'Yantian') to filter your data networks instantly.")
         user_query = st.text_input("Enter search keywords:", placeholder="e.g. ANL, Yantian")
         
+        # Parse search keys using original working logic
         keywords = [k.strip().lower() for k in user_query.split(",") if k.strip()]
         
+        # Structures to keep track of compiled data for downloading
         compiled_download_text = []
         compiled_download_text.append("# Precisco Search Export Summary\n")
         compiled_download_text.append(f"**Search Query Applied:** {user_query if user_query else 'ALL (No Filter)'}\n")
@@ -85,7 +85,7 @@ else:
                     st.error(f"File {current_file} missing during live retrieval cycle.")
                     continue
                 
-                # PROCESSING ENGINE A: EXCEL SPREADSHEETS
+                # PROCESSING ENGINE A: EXCEL SPREADSHEETS (Includes Email Database)
                 if current_file.endswith(".xlsx"):
                     try:
                         xl = pd.ExcelFile(target_file_path, engine='openpyxl')
@@ -104,14 +104,24 @@ else:
                             if not df_filtered.empty:
                                 total_matches_found += len(df_filtered)
                                 
-                                st.markdown(f"### 📄 Source: `{current_file}`")
-                                st.markdown(f"**📑 Sheet:** {sheet}")
-                                st.metric(f"Rows Found in '{sheet}'", len(df_filtered))
+                                # Render Headers and Label visually (Distinguishes the email database cleanly)
+                                if current_file == "converted_emails_database.xlsx":
+                                    st.markdown(f"### ✉️ Source: `Archived Emails Database`")
+                                else:
+                                    st.markdown(f"### 📄 Source: `{current_file}`")
+                                    st.markdown(f"**📑 Sheet:** {sheet}")
+                                    
+                                st.metric(f"Rows Found", len(df_filtered))
                                 st.dataframe(df_filtered, use_container_width=True, hide_index=False)
                                 st.write("---")
                                 
-                                compiled_download_text.append(f"## 📄 Source: {current_file}")
-                                compiled_download_text.append(f"### 📑 Sheet: {sheet}\n")
+                                # Convert to text representation for the unified download download package
+                                if current_file == "converted_emails_database.xlsx":
+                                    compiled_download_text.append(f"## ✉️ Source: Archived Emails Database")
+                                else:
+                                    compiled_download_text.append(f"## 📄 Source: {current_file}")
+                                    compiled_download_text.append(f"### 📑 Sheet: {sheet}\n")
+                                    
                                 compiled_download_text.append(df_filtered.to_markdown(index=False))
                                 compiled_download_text.append("\n\n---\n")
                                 
@@ -143,16 +153,19 @@ else:
                         if extracted_rows:
                             total_matches_found += len(extracted_rows)
                             
+                            # Standardize matrix grid formatting matching origin app logic
                             max_cols = max(len(r) for r in extracted_rows)
                             headers = [f"Column {i+1}" for i in range(max_cols)]
                             padded_rows = [r + [""] * (max_cols - len(r)) for r in extracted_rows]
                             output_df = pd.DataFrame(padded_rows, columns=headers)
                             
+                            # Render Headers Visually
                             st.markdown(f"### 📄 Source: `{current_file}`")
                             st.metric("Lines Found in PDF", len(extracted_rows))
                             st.dataframe(output_df, use_container_width=True, hide_index=True)
                             st.write("---")
                             
+                            # Convert to text representation for the unified download download package
                             compiled_download_text.append(f"## 📄 Source: {current_file}\n")
                             compiled_download_text.append(output_df.to_markdown(index=False))
                             compiled_download_text.append("\n\n---\n")
@@ -160,39 +173,19 @@ else:
                     except Exception as pdf_ex:
                         st.warning(f"⚠️ Skipped processing PDF text extraction fault on `{current_file}`: {pdf_ex}")
 
-                # PROCESSING ENGINE C: EML DOCUMENTS (EMAILS)
-                elif current_file.endswith(".eml"):
-                    try:
-                        with open(target_file_path, "rb") as f:
-                            msg = email.message_from_binary_file(f, policy=policy.default)
-                        
-                        subject = str(msg.get('subject', '(No Subject)'))
-                        from_ptr = str(msg.get('from', '(No Sender)'))
-                        to_ptr = str(msg.get('to', '(No Recipient)'))
-                        date_ptr = str(msg.get('date', '(No Date)'))
-                        
-                        body_parts = []
-                        if msg.is_multipart():
-                            for part in msg.walk():
-                                content_type = part.get_content_type()
-                                content_disposition = str(part.get("Content-Disposition"))
-                                if content_type == "text/plain" and "attachment" not in content_disposition:
-                                    try:
-                                        payload = part.get_payload(decode=True).decode(part.get_content_charset() or 'utf-8', errors='ignore')
-                                        body_parts.append(payload)
-                                    except Exception:
-                                        pass
-                        else:
-                            try:
-                                payload = msg.get_payload(decode=True).decode(msg.get_content_charset() or 'utf-8', errors='ignore')
-                                body_parts.append(payload)
-                            except Exception:
-                                pass
-                                
-                        body_text = "\n".join(body_parts).strip()
-                        
-                        if not body_text:
-                            try:
-                                fallback_body = msg.get_body(preferencelist=('plain', 'html'))
-                                if fallback_body:
-                                    body_text = fallback_body.get_content()
+        # 5. GLOBAL AGGREGATION & ACTION CONTROL BAR
+        if total_matches_found > 0:
+            st.success(f"🎉 Complete Global Search Finished! Discovered {total_matches_found} total entry alignments.")
+            
+            # Formulate full markdown text block ready for saving
+            final_download_payload = "\n".join(compiled_download_text)
+            
+            st.download_button(
+                label="📥 Download Search Results",
+                data=final_download_payload,
+                file_name="precisco_query_export.md",
+                mime="text/markdown",
+                use_container_width=True
+            )
+        else:
+            st.warning("No records matched your specific filter query across any local repository files.")
