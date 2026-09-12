@@ -1,8 +1,5 @@
 streamlit
 pandas
-openpyxl
-pdfplumber
-streamlit
-pandas
 pypdf
 openpyxl
+tabulate
