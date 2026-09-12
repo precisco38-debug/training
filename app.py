@@ -48,7 +48,7 @@ if not st.session_state["authenticated"]:
             
 else:
     # 4. LOGGED IN BRANDED DASHBOARD
-    col1, col2 = st.columns([1, 2]) # FIXED: Restored column structural layout weights
+    col1, col2 = st.columns([1, 2]) 
     with col1:
         if os.path.exists(logo_path):
             st.image(logo_path, use_container_width=True)
@@ -61,20 +61,44 @@ else:
     available_files = get_live_file_list_local()
 
     if not available_files:
-        st.error("⚠️ No files found! Please ask the clerk to upload `.xlsx` or `.pdf` files to the local `documents` folder.")
+        st.error("⚠️ No files found! Please upload files like precisco.xlsx to the local documents folder.")
     else:
-        st.info("💡 Instructions: Clear the box below to see ALL rows across ALL files. Or search any keyword (e.g., 'ANL', 'BENLINE', 'Yantian') to filter your data networks instantly.")
-        user_query = st.text_input("Enter search keywords:", placeholder="e.g. ANL, Yantian")
+        st.info("💡 Select a Country or Port from the dropdowns, or enter one manually and press Return to filter the rate tables.")
         
-        keywords = [k.strip().lower() for k in user_query.split(",") if k.strip()]
+        # UI for Dropdowns
+        col_c, col_p = st.columns(2)
         
+        with col_c:
+            country_options = ["", "China", "United States", "Singapore", "Malaysia", "Vietnam", "Japan"]
+            selected_country = st.selectbox("Select Country:", country_options)
+            
+        with col_p:
+            port_options = ["", "Nansha", "Shanghai", "Xingang", "Yantian", "Los Angeles", "Rotterdam"]
+            selected_port = st.selectbox("Select Port:", port_options)
+            
+        # Text box for manual entry
+        manual_entry = st.text_input("Or manually enter Country/Port (Press Return to search):", placeholder="e.g. Shenzhen, Brazil")
+        
+        # Build the active keyword list based on user selections and inputs
+        active_keywords = []
+        if selected_country:
+            active_keywords.append(selected_country.strip().lower())
+        if selected_port:
+            active_keywords.append(selected_port.strip().lower())
+        if manual_entry.strip():
+            # Extend list with manually entered keywords separated by commas
+            active_keywords.extend([k.strip().lower() for k in manual_entry.split(",") if k.strip()])
+            
         compiled_download_text = []
         compiled_download_text.append("# Precisco Search Export Summary\n")
-        compiled_download_text.append(f"**Search Query Applied:** {user_query if user_query else 'ALL (No Filter)'}\n")
+        
+        search_display = ", ".join([k.title() for k in active_keywords]) if active_keywords else "ALL (No Filter)"
+        compiled_download_text.append(f"**Search Query Applied:** {search_display}\n")
         compiled_download_text.append("---\n")
         
         total_matches_found = 0
         
+        # Only process if a search term exists or if we explicitly want to see all
         with st.spinner("Processing global supply chain matrices..."):
             for current_file in available_files:
                 target_file_path = os.path.join(LOCAL_FOLDER_PATH, current_file)
@@ -93,8 +117,8 @@ else:
                             df = pd.read_excel(target_file_path, sheet_name=sheet)
                             df = df.fillna("")
                             
-                            if keywords:
-                                pattern = '|'.join(keywords)
+                            if active_keywords:
+                                pattern = '|'.join(active_keywords)
                                 mask = df.astype(str).apply(lambda x: x.str.lower().str.contains(pattern, na=False)).any(axis=1)
                                 df_filtered = df[mask]
                             else:
@@ -135,10 +159,11 @@ else:
                             
                             extracted_rows = []
                             for line in all_lines[1:]:
-                                if keywords:
-                                    matches = any(kw in line.lower() for kw in keywords)
+                                if active_keywords:
+                                    matches = any(kw in line.lower() for kw in active_keywords)
                                 else:
                                     matches = True
+                                    
                                 if matches:
                                     parts = [p.strip() for p in line.split("  ") if p.strip()]
                                     if parts:
@@ -177,4 +202,4 @@ else:
                 use_container_width=True
             )
         else:
-            st.warning("🔍 No active match metrics detected inside data arrays. Try expanding keywords.")
+            st.warning("🔍 No active match metrics detected. Check your parameters or verify files like precisco.xlsx are in the directory.")
