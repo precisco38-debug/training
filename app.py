@@ -63,7 +63,7 @@ else:
     if not available_files:
         st.error("⚠️ No files found! Please upload files like precisco.xlsx to the local documents folder.")
     else:
-        st.info("💡 Select a Country or Port from the dropdowns, or enter one manually and press Return to filter the rate tables.")
+        st.info("💡 Select a Country or Port from the dropdowns, or enter keywords manually and press Return. Rows must match ALL active keywords.")
         
         # UI for Dropdowns
         col_c, col_p = st.columns(2)
@@ -77,7 +77,7 @@ else:
             selected_port = st.selectbox("Select Port:", port_options)
             
         # Text box for manual entry
-        manual_entry = st.text_input("Or manually enter Country/Port (Press Return to search):", placeholder="e.g. Shenzhen, Brazil")
+        manual_entry = st.text_input("Or manually enter Country/Port/Carrier (Press Return to search):", placeholder="e.g. KMTC, Shanghai")
         
         # Build the active keyword list based on user selections and inputs
         active_keywords = []
@@ -98,7 +98,6 @@ else:
         
         total_matches_found = 0
         
-        # Only process if a search term exists or if we explicitly want to see all
         with st.spinner("Processing global supply chain matrices..."):
             for current_file in available_files:
                 target_file_path = os.path.join(LOCAL_FOLDER_PATH, current_file)
@@ -117,12 +116,13 @@ else:
                             df = pd.read_excel(target_file_path, sheet_name=sheet)
                             df = df.fillna("")
                             
+                            df_filtered = df.copy()
+                            
+                            # Apply AND logic: Row must contain ALL active keywords
                             if active_keywords:
-                                pattern = '|'.join(active_keywords)
-                                mask = df.astype(str).apply(lambda x: x.str.lower().str.contains(pattern, na=False)).any(axis=1)
-                                df_filtered = df[mask]
-                            else:
-                                df_filtered = df
+                                for kw in active_keywords:
+                                    mask = df_filtered.astype(str).apply(lambda x: x.str.lower().str.contains(kw, na=False)).any(axis=1)
+                                    df_filtered = df_filtered[mask]
                                 
                             if not df_filtered.empty:
                                 total_matches_found += len(df_filtered)
@@ -160,7 +160,8 @@ else:
                             extracted_rows = []
                             for line in all_lines[1:]:
                                 if active_keywords:
-                                    matches = any(kw in line.lower() for kw in active_keywords)
+                                    # Strict AND matching for PDF lines
+                                    matches = all(kw in line.lower() for kw in active_keywords)
                                 else:
                                     matches = True
                                     
