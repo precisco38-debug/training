@@ -63,7 +63,7 @@ else:
     if not available_files:
         st.error("⚠️ No files found! Please upload files like precisco.xlsx to the local documents folder.")
     else:
-        st.info("💡 Select a Country or Port from the dropdowns, or enter keywords manually and press Return. Rows must match ALL active keywords.")
+        st.info("💡 Select a Country or Port, or enter keywords manually. Changing one field will automatically clear the others.")
         
         # --- DYNAMIC DROPDOWN EXTRACTION ---
         @st.cache_data(show_spinner=False)
@@ -77,7 +77,6 @@ else:
                         xl = pd.ExcelFile(target_file_path, engine='openpyxl')
                         for sheet in xl.sheet_names:
                             df = pd.read_excel(target_file_path, sheet_name=sheet)
-                            # Standardize column names to uppercase to ensure a match
                             df.columns = df.columns.astype(str).str.upper().str.strip()
                             
                             if 'COUNTRY' in df.columns:
@@ -90,33 +89,59 @@ else:
                     except Exception:
                         pass
             
-            # Return sorted lists with a blank default option at the start
             return [""] + sorted(list(countries)), [""] + sorted(list(ports))
 
         # Fetch the dynamic lists for both countries and ports
         country_options, port_options = extract_dropdown_options(available_files)
         
+        # --- MUTUALLY EXCLUSIVE CALLBACKS ---
+        def on_country_change():
+            st.session_state.port_select = ""
+            st.session_state.manual_input = ""
+            
+        def on_port_change():
+            st.session_state.country_select = ""
+            st.session_state.manual_input = ""
+            
+        def on_manual_change():
+            st.session_state.country_select = ""
+            st.session_state.port_select = ""
+            
         # UI for Dropdowns
         col_c, col_p = st.columns(2)
         
         with col_c:
-            selected_country = st.selectbox("Select Country:", country_options)
+            selected_country = st.selectbox(
+                "Select Country:", 
+                country_options, 
+                key="country_select", 
+                on_change=on_country_change
+            )
             
         with col_p:
-            selected_port = st.selectbox("Select Port:", port_options)
+            selected_port = st.selectbox(
+                "Select Port:", 
+                port_options, 
+                key="port_select", 
+                on_change=on_port_change
+            )
             
         # Text box for manual entry
-        manual_entry = st.text_input("Or manually enter Country/Port/Carrier (Press Return to search):", placeholder="e.g. KMTC, Shanghai")
+        manual_entry = st.text_input(
+            "Or manually enter keywords (Press Return to search):", 
+            placeholder="e.g. KMTC, Shanghai", 
+            key="manual_input", 
+            on_change=on_manual_change
+        )
         
-        # Build the active keyword list based on user selections and inputs
+        # Build the active keyword list based on the session state
         active_keywords = []
-        if selected_country:
-            active_keywords.append(selected_country.strip().lower())
-        if selected_port:
-            active_keywords.append(selected_port.strip().lower())
-        if manual_entry.strip():
-            # Extend list with manually entered keywords separated by commas
-            active_keywords.extend([k.strip().lower() for k in manual_entry.split(",") if k.strip()])
+        if st.session_state.country_select:
+            active_keywords.append(st.session_state.country_select.strip().lower())
+        if st.session_state.port_select:
+            active_keywords.append(st.session_state.port_select.strip().lower())
+        if st.session_state.manual_input.strip():
+            active_keywords.extend([k.strip().lower() for k in st.session_state.manual_input.split(",") if k.strip()])
             
         compiled_download_text = []
         compiled_download_text.append("# Precisco Search Export Summary\n")
@@ -189,7 +214,6 @@ else:
                             extracted_rows = []
                             for line in all_lines[1:]:
                                 if active_keywords:
-                                    # Strict AND matching for PDF lines
                                     matches = all(kw in line.lower() for kw in active_keywords)
                                 else:
                                     matches = True
