@@ -65,15 +65,44 @@ else:
     else:
         st.info("💡 Select a Country or Port from the dropdowns, or enter keywords manually and press Return. Rows must match ALL active keywords.")
         
+        # --- DYNAMIC DROPDOWN EXTRACTION ---
+        @st.cache_data(show_spinner=False)
+        def extract_dropdown_options(file_list):
+            countries = set()
+            ports = set()
+            for current_file in file_list:
+                if current_file.endswith(".xlsx"):
+                    try:
+                        target_file_path = os.path.join(LOCAL_FOLDER_PATH, current_file)
+                        xl = pd.ExcelFile(target_file_path, engine='openpyxl')
+                        for sheet in xl.sheet_names:
+                            df = pd.read_excel(target_file_path, sheet_name=sheet)
+                            # Standardize column names to uppercase to ensure a match
+                            df.columns = df.columns.astype(str).str.upper().str.strip()
+                            
+                            if 'COUNTRY' in df.columns:
+                                valid_countries = df['COUNTRY'].dropna().astype(str).unique()
+                                countries.update([c.strip() for c in valid_countries if c.strip()])
+                                
+                            if 'PORT' in df.columns:
+                                valid_ports = df['PORT'].dropna().astype(str).unique()
+                                ports.update([p.strip() for p in valid_ports if p.strip()])
+                    except Exception:
+                        pass
+            
+            # Return sorted lists with a blank default option at the start
+            return [""] + sorted(list(countries)), [""] + sorted(list(ports))
+
+        # Fetch the dynamic lists for both countries and ports
+        country_options, port_options = extract_dropdown_options(available_files)
+        
         # UI for Dropdowns
         col_c, col_p = st.columns(2)
         
         with col_c:
-            country_options = ["", "China", "United States", "Singapore", "Malaysia", "Vietnam", "Japan"]
             selected_country = st.selectbox("Select Country:", country_options)
             
         with col_p:
-            port_options = ["", "Nansha", "Shanghai", "Xingang", "Yantian", "Los Angeles", "Rotterdam"]
             selected_port = st.selectbox("Select Port:", port_options)
             
         # Text box for manual entry
