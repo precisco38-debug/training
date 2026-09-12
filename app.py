@@ -175,7 +175,8 @@ else:
                             # Apply AND logic: Row must contain ALL active keywords
                             if active_keywords:
                                 for kw in active_keywords:
-                                    mask = df_filtered.astype(str).apply(lambda x: x.str.lower().str.contains(kw, na=False)).any(axis=1)
+                                    # FIXED: Added regex=False so parentheses are treated as literal text
+                                    mask = df_filtered.astype(str).apply(lambda x: x.str.lower().str.contains(kw, na=False, regex=False)).any(axis=1)
                                     df_filtered = df_filtered[mask]
                                 
                             if not df_filtered.empty:
